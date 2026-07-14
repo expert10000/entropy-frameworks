@@ -1,0 +1,2143 @@
+\documentclass[11pt,oneside]{book}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Packages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+
+\usepackage{lmodern}
+\usepackage{microtype}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+
+\usepackage{enumitem}
+\usepackage{csquotes}
+
+\usepackage{tikz}
+\usetikzlibrary{
+	arrows.meta,
+	positioning,
+	shapes.geometric,
+	fit,
+	backgrounds,
+	calc,
+	matrix
+}
+
+\usepackage[
+a4paper,
+margin=2.8cm,
+headheight=15pt
+]{geometry}
+
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{bookmark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Hyperlink configuration
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\hypersetup{
+	colorlinks=true,
+	linkcolor=blue!55!black,
+	citecolor=green!40!black,
+	urlcolor=blue!60!black,
+	pdftitle={Entropy in Image Processing and Computer Vision},
+	pdfauthor={Author},
+	pdfsubject={Information theory, entropy, uncertainty, and computer vision},
+	pdfkeywords={
+		entropy,
+		image processing,
+		computer vision,
+		rough sets,
+		fuzzy sets,
+		deep learning
+	}
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Page style
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\nouppercase{\leftmark}}
+\fancyhead[R]{\thepage}
+
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Paragraph formatting
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.6em}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% List formatting
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\setlist[itemize]{
+	topsep=0.4em,
+	itemsep=0.25em,
+	parsep=0pt
+}
+
+\setlist[enumerate]{
+	topsep=0.4em,
+	itemsep=0.25em,
+	parsep=0pt
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Theorem environments
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{proposition}{Proposition}[chapter]
+\newtheorem{lemma}{Lemma}[chapter]
+\newtheorem{corollary}{Corollary}[chapter]
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[chapter]
+\newtheorem{example}{Example}[chapter]
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Custom commands
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newcommand{\Entropy}{\mathcal{H}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Expectation}{\mathbb{E}}
+\newcommand{\Lower}{\underline{\operatorname{apr}}}
+\newcommand{\Upper}{\overline{\operatorname{apr}}}
+\newcommand{\Boundary}{\operatorname{BND}}
+\newcommand{\Positive}{\operatorname{POS}}
+\newcommand{\Negative}{\operatorname{NEG}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\JS}{D_{\mathrm{JS}}}
+\newcommand{\R}{\mathbb{R}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Custom environments
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newenvironment{chapteroverview}
+{
+	\begin{quote}
+		\small
+		\textbf{Chapter overview.}
+	}
+	{
+	\end{quote}
+}
+
+\newenvironment{researchquestions}
+{
+	\begin{quote}
+		\small
+		\textbf{Research questions.}
+		\begin{enumerate}
+		}
+		{
+		\end{enumerate}
+	\end{quote}
+}
+
+\newenvironment{datasetlist}
+{
+	\begin{itemize}[label=\(\triangleright\)]
+	}
+	{
+	\end{itemize}
+}
+
+\newenvironment{applicationlist}
+{
+	\begin{itemize}[label=\(\blacktriangleright\)]
+	}
+	{
+	\end{itemize}
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Document metadata
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\title{
+	\Huge
+	Entropy in Image Processing\\
+	and Computer Vision
+	\\[1em]
+	\Large
+	From Classical Information Theory to\\
+	Rough, Fuzzy, Graph-Based, and Deep Entropy
+}
+
+\author{Author Name}
+
+\date{\today}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Document
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Front matter
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\frontmatter
+	
+	\maketitle
+	
+	\chapter*{Preface}
+	\addcontentsline{toc}{chapter}{Preface}
+	
+	Entropy has long served as a fundamental measure of information, uncertainty,
+	complexity, and disorder. In classical image processing, entropy is commonly
+	computed from image-intensity histograms or local pixel neighborhoods. Modern
+	computer vision, however, operates on increasingly abstract representations,
+	including superpixels, region graphs, convolutional feature maps, transformer
+	tokens, and high-dimensional latent embeddings.
+	
+	This book develops a unified account of entropy across these representations.
+	It connects classical information theory with probabilistic uncertainty,
+	fuzzy sets, rough sets, fuzzy-rough systems, evidence theory, graph methods,
+	deep learning, Vision Transformers, and foundation models.
+	
+	The principal thesis is that entropy should be regarded not as a single
+	formula applied exclusively to pixel histograms, but as a general functional
+	defined over a representation and its associated model of uncertainty.
+	
+	\chapter*{Notation}
+	\addcontentsline{toc}{chapter}{Notation}
+	
+	\begin{longtable}{p{0.22\textwidth}p{0.68\textwidth}}
+		\toprule
+		Symbol & Meaning \\
+		\midrule
+		\endfirsthead
+		
+		\toprule
+		Symbol & Meaning \\
+		\midrule
+		\endhead
+		
+		\(X,Y,Z\) &
+		Random variables or learned representations.
+		\\
+		
+		\(p(x)\) &
+		Probability mass or density function.
+		\\
+		
+		\(\Entropy(X)\) &
+		Entropy of \(X\).
+		\\
+		
+		\(\Lower{R}(A)\) &
+		Lower rough approximation of \(A\) under relation \(R\).
+		\\
+		
+		\(\Upper{R}(A)\) &
+		Upper rough approximation of \(A\) under relation \(R\).
+		\\
+		
+		\(\Boundary_R(A)\) &
+		Rough boundary region of \(A\).
+		\\
+		
+		\(\mu_A(x)\) &
+		Fuzzy membership of \(x\) in \(A\).
+		\\
+		
+		\(G=(V,E)\) &
+		Graph with node set \(V\) and edge set \(E\).
+		\\
+		
+		\(\bm{z}_i\) &
+		Deep feature or latent embedding of sample \(i\).
+		\\
+		
+		\bottomrule
+	\end{longtable}
+	
+	\tableofcontents
+	\listoffigures
+	\listoftables
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Main matter
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\mainmatter
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% PART I
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\part{Foundations}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 1
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Introduction}
+	\label{chap:introduction}
+	
+	\begin{chapteroverview}
+		This chapter introduces information, uncertainty, and entropy in image
+		processing. It presents the historical development of entropy methods,
+		defines the scope of the book, and explains its organization.
+	\end{chapteroverview}
+	
+	\section{Information and Uncertainty}
+	
+	Information quantifies how much is learned when an observation is made.
+	Uncertainty describes the lack of complete knowledge before that observation.
+	Entropy connects these ideas by assigning a numerical value to the uncertainty
+	of a probability distribution or, more generally, to the ambiguity of a
+	mathematical representation.
+	
+	\section{Why Entropy in Image Processing?}
+	
+	Entropy has been used in image processing for:
+	
+	\begin{itemize}
+		\item image thresholding;
+		\item texture characterization;
+		\item image registration;
+		\item compression;
+		\item segmentation;
+		\item feature selection;
+		\item uncertainty estimation;
+		\item active learning;
+		\item representation analysis.
+	\end{itemize}
+	
+	\section{Historical Development}
+	
+	The development of entropy methods may be viewed as a transition through
+	successively richer representations:
+
+
+
+	\begin{center}
+		\begin{tikzpicture}[
+			node distance=8mm,
+			box/.style={
+				draw,
+				rounded corners,
+				minimum width=7cm,
+				minimum height=8mm,
+				align=center,
+				fill=blue!5
+			},
+			arrow/.style={
+				-{Latex[length=2.5mm]},
+				thick
+			}
+			]
+			
+			\node[box] (pixels) {Pixel intensities};
+			\node[box, below=of pixels] (local) {Local neighborhoods and textures};
+			\node[box, below=of local] (regions) {Regions and superpixels};
+			\node[box, below=of regions] (graphs) {Graphs and relational structures};
+			\node[box, below=of graphs] (features) {Deep feature maps and embeddings};
+			\node[box, below=of features] (foundation)
+			{Foundation-model representations};
+			
+			\draw[arrow] (pixels) -- (local);
+			\draw[arrow] (local) -- (regions);
+			\draw[arrow] (regions) -- (graphs);
+			\draw[arrow] (graphs) -- (features);
+			\draw[arrow] (features) -- (foundation);
+			
+		\end{tikzpicture}
+	\end{center}
+	
+	\section{Scope of the Survey}
+	
+	This book covers five interacting dimensions:
+	
+	\begin{enumerate}
+		\item image representations;
+		\item mathematical uncertainty models;
+		\item entropy measures;
+		\item learning architectures;
+		\item application domains.
+	\end{enumerate}
+	
+	\section{Organization of the Book}
+	
+	The book is divided into six parts:
+	
+	\begin{description}
+		\item[Part I:] Foundations of information theory and generalized entropy.
+		\item[Part II:] Entropy on image representations.
+		\item[Part III:] Probabilistic, fuzzy, rough, and evidence-based uncertainty.
+		\item[Part IV:] Entropy in modern deep learning.
+		\item[Part V:] Application domains and benchmark datasets.
+		\item[Part VI:] A unified framework and future research directions.
+	\end{description}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 2
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Information Theory}
+	\label{chap:information-theory}
+	
+	\begin{chapteroverview}
+		This chapter develops the mathematical foundations required throughout the
+		book, including Shannon entropy, mutual information, divergences, and the
+		information bottleneck.
+	\end{chapteroverview}
+	
+	\section{Shannon Entropy}
+	
+	For a discrete random variable \(X\) with outcomes
+	\(\{x_1,\ldots,x_n\}\) and probabilities \(p_i=\Prob(X=x_i)\),
+	Shannon entropy is
+	
+	\[
+	\Entropy(X)
+	=
+	-\sum_{i=1}^{n} p_i \log p_i.
+	\]
+	
+	\section{Joint Entropy}
+	
+	For random variables \(X\) and \(Y\),
+	
+	\[
+	\Entropy(X,Y)
+	=
+	-\sum_{x}\sum_{y}
+	p(x,y)\log p(x,y).
+	\]
+	
+	\section{Conditional Entropy}
+	
+	Conditional entropy is defined by
+	
+	\[
+	\Entropy(Y\mid X)
+	=
+	\Entropy(X,Y)-\Entropy(X).
+	\]
+	
+	\section{Mutual Information}
+	
+	Mutual information measures the statistical dependence between \(X\) and \(Y\):
+	
+	\[
+	I(X;Y)
+	=
+	\Entropy(X)+\Entropy(Y)-\Entropy(X,Y).
+	\]
+	
+	Equivalently,
+	
+	\[
+	I(X;Y)
+	=
+	\sum_{x,y}
+	p(x,y)
+	\log
+	\frac{p(x,y)}{p(x)p(y)}.
+	\]
+	
+	\section{Relative Entropy}
+	
+	The Kullback--Leibler divergence between distributions \(P\) and \(Q\) is
+	
+	\[
+	\KL(P\Vert Q)
+	=
+	\sum_x p(x)
+	\log
+	\frac{p(x)}{q(x)}.
+	\]
+	
+	\section{Cross Entropy}
+	
+	The cross entropy between \(P\) and \(Q\) is
+	
+	\[
+	\Entropy(P,Q)
+	=
+	-\sum_x p(x)\log q(x).
+	\]
+	
+	\section{Jensen--Shannon Divergence}
+	
+	The Jensen--Shannon divergence is
+	
+	\[
+	\JS(P,Q)
+	=
+	\frac{1}{2}
+	\KL(P\Vert M)
+	+
+	\frac{1}{2}
+	\KL(Q\Vert M),
+	\]
+	
+	where
+	
+	\[
+	M=\frac{1}{2}(P+Q).
+	\]
+	
+	\section{Information Bottleneck}
+	
+	The information bottleneck objective seeks a representation \(Z\) that
+	preserves information relevant to target \(Y\) while compressing input \(X\):
+	
+	\[
+	\mathcal{L}_{\mathrm{IB}}
+	=
+	I(X;Z)-\beta I(Z;Y).
+	\]
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 3
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Generalized Entropies}
+	\label{chap:generalized-entropies}
+	
+	\begin{chapteroverview}
+		This chapter introduces entropy families that extend Shannon entropy or measure
+		regularity, predictability, and complexity in ordered and multiscale data.
+	\end{chapteroverview}
+	
+	\section{Rényi Entropy}
+	
+	For order \(\alpha>0\), \(\alpha\neq1\),
+	
+	\[
+	\Entropy_{\alpha}^{\mathrm{R}}(X)
+	=
+	\frac{1}{1-\alpha}
+	\log
+	\left(
+	\sum_i p_i^\alpha
+	\right).
+	\]
+	
+	\section{Tsallis Entropy}
+	
+	For \(q>0\), \(q\neq1\),
+	
+	\[
+	\Entropy_q^{\mathrm{T}}(X)
+	=
+	\frac{1}{q-1}
+	\left(
+	1-\sum_i p_i^q
+	\right).
+	\]
+	
+	\section{Havrda--Charvát Entropy}
+	
+	The Havrda--Charvát entropy belongs to the family of generalized
+	nonadditive entropy measures. Its relationship to the Tsallis family should
+	be discussed together with differences in normalization conventions.
+	
+	\section{Sharma--Mittal Entropy}
+	
+	The Sharma--Mittal family combines parameters associated with Rényi and
+	Tsallis entropies and provides a broad two-parameter entropy model.
+	
+	\section{Approximate Entropy}
+	
+	Approximate entropy measures the regularity and predictability of ordered data.
+	It is particularly useful for texture sequences, biomedical signals, and
+	spatially ordered image descriptors.
+	
+	\section{Sample Entropy}
+	
+	Sample entropy modifies approximate entropy by excluding self-matches and
+	usually provides improved statistical behavior for finite sequences.
+	
+	\section{Permutation Entropy}
+	
+	Permutation entropy measures the diversity of ordinal patterns in a sequence
+	or local image neighborhood.
+	
+	\section{Multiscale Entropy}
+	
+	Multiscale entropy evaluates complexity across several spatial or temporal
+	scales rather than at a single resolution.
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% PART II
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\part{Entropy on Image Representations}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 4
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Pixel-Based Entropy}
+	\label{chap:pixel-entropy}
+	
+	\begin{chapteroverview}
+		Pixel-based entropy treats image intensities or local intensity distributions
+		as the primary representation.
+	\end{chapteroverview}
+	
+	\section{Histogram Entropy}
+	
+	Let an image have normalized intensity histogram
+	\(\{p_0,\ldots,p_{L-1}\}\). Its global histogram entropy is
+	
+	\[
+	\Entropy_{\mathrm{hist}}
+	=
+	-\sum_{i=0}^{L-1} p_i\log p_i.
+	\]
+	
+	\section{Local Entropy}
+	
+	For a neighborhood \(\mathcal{N}(x)\) around pixel \(x\),
+	
+	\[
+	\Entropy_{\mathrm{local}}(x)
+	=
+	-\sum_{k=0}^{L-1}
+	p_k\bigl(\mathcal{N}(x)\bigr)
+	\log
+	p_k\bigl(\mathcal{N}(x)\bigr).
+	\]
+	
+	\section{Multiscale Entropy}
+	
+	Local entropy can be evaluated using several neighborhood sizes or image
+	pyramid levels.
+	
+	\section{Adaptive Entropy}
+	
+	Adaptive methods choose neighborhood size, histogram binning, or entropy
+	parameters according to local image structure.
+	
+	\section{Thresholding}
+	
+	Entropy-based thresholding chooses threshold \(t\) by optimizing an objective
+	defined over foreground and background distributions.
+	
+	\section*{Representative Datasets}
+	\addcontentsline{toc}{section}{Representative Datasets}
+	
+	\begin{datasetlist}
+		\item Kodak image dataset;
+		\item Berkeley Segmentation Dataset and Benchmark, BSDS500.
+	\end{datasetlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 5
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Texture Entropy}
+	\label{chap:texture-entropy}
+	
+	\begin{chapteroverview}
+		Texture entropy quantifies local spatial organization, repetition,
+		irregularity, and multiresolution structure.
+	\end{chapteroverview}
+	
+	\section{GLCM Entropy}
+	
+	For a normalized gray-level co-occurrence matrix \(P(i,j)\),
+	
+	\[
+	\Entropy_{\mathrm{GLCM}}
+	=
+	-\sum_i\sum_j
+	P(i,j)\log P(i,j).
+	\]
+	
+	\section{Wavelet Entropy}
+	
+	Wavelet entropy measures the distribution of energy among wavelet
+	coefficients or frequency subbands.
+	
+	\section{Fractal Entropy}
+	
+	Fractal entropy combines scale-dependent structural complexity with
+	fractal representations.
+	
+	\section{Local Binary Patterns}
+	
+	Entropy may be computed over local binary pattern histograms to measure the
+	diversity of local texture structures.
+	
+	\section{Multiresolution Entropy}
+	
+	Multiresolution methods analyze entropy across scales, frequency bands, or
+	wavelet decomposition levels.
+	
+	\section*{Representative Datasets}
+	\addcontentsline{toc}{section}{Representative Datasets}
+	
+	\begin{datasetlist}
+		\item Brodatz texture dataset;
+		\item Describable Textures Dataset;
+		\item KTH-TIPS texture dataset.
+	\end{datasetlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 6
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Region Entropy}
+	\label{chap:region-entropy}
+	
+	\begin{chapteroverview}
+		Region entropy moves beyond individual pixels and measures uncertainty,
+		heterogeneity, or structural complexity within image regions.
+	\end{chapteroverview}
+	
+	\section{Superpixels}
+	
+	Superpixels group nearby pixels with similar appearance into perceptually
+	meaningful atomic regions.
+	
+	\section{Region Descriptors}
+	
+	A region may be represented by:
+	
+	\begin{itemize}
+		\item mean color;
+		\item texture statistics;
+		\item shape descriptors;
+		\item spatial coordinates;
+		\item deep feature embeddings;
+		\item class-probability distributions.
+	\end{itemize}
+	
+	\section{Region Uncertainty}
+	
+	For region \(R\), one possible uncertainty measure is
+	
+	\[
+	\Entropy(R)
+	=
+	-\sum_{c=1}^{C}
+	p(c\mid R)\log p(c\mid R).
+	\]
+	
+	\section{Region Merging}
+	
+	Entropy may guide region merging by measuring whether merging two adjacent
+	regions reduces internal heterogeneity or increases semantic consistency.
+	
+	\section{Region Entropy}
+	
+	Region entropy may incorporate class uncertainty, internal feature variation,
+	boundary uncertainty, and relations with adjacent regions.
+	
+	\section*{Representative Datasets}
+	\addcontentsline{toc}{section}{Representative Datasets}
+	
+	\begin{datasetlist}
+		\item Cityscapes;
+		\item ADE20K.
+	\end{datasetlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 7
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Graph Entropy}
+	\label{chap:graph-entropy}
+	
+	\begin{chapteroverview}
+		This chapter treats images as graphs whose nodes represent pixels,
+		superpixels, regions, objects, or learned tokens.
+	\end{chapteroverview}
+	
+	\section{Image Graphs}
+	
+	An image graph is written as
+	
+	\[
+	G=(V,E),
+	\]
+	
+	where \(V\) is the set of nodes and \(E\) represents adjacency, similarity,
+	or semantic relationships.
+	
+	\section{Region Adjacency Graphs}
+	
+	A region adjacency graph connects spatially adjacent superpixels or segmented
+	regions.
+	
+	\section{Graph Laplacian}
+	
+	Given adjacency matrix \(A\) and degree matrix \(D\), the graph Laplacian is
+	
+	\[
+	L=D-A.
+	\]
+	
+	The normalized graph Laplacian may be written as
+	
+	\[
+	L_{\mathrm{norm}}
+	=
+	I-D^{-1/2}AD^{-1/2}.
+	\]
+	
+	\section{Structural Entropy}
+	
+	Structural entropy measures uncertainty associated with the organization,
+	partitioning, or coding structure of a graph.
+	
+	\section{Spectral Entropy}
+	
+	Let \(\lambda_1,\ldots,\lambda_n\) denote normalized spectral quantities such
+	that \(\sum_i\lambda_i=1\). Spectral entropy may be defined as
+	
+	\[
+	\Entropy_{\mathrm{spectral}}
+	=
+	-\sum_{i=1}^{n}
+	\lambda_i\log\lambda_i.
+	\]
+	
+	\section{Random-Walk Entropy}
+	
+	Random-walk entropy measures uncertainty in graph transitions or trajectories.
+	
+	\section*{Representative Datasets}
+	\addcontentsline{toc}{section}{Representative Datasets}
+	
+	\begin{datasetlist}
+		\item Microsoft COCO;
+		\item PASCAL VOC.
+	\end{datasetlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 8
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Feature Entropy}
+	\label{chap:feature-entropy}
+	
+	\begin{chapteroverview}
+		Feature entropy measures uncertainty or diversity in representations learned
+		by neural networks.
+	\end{chapteroverview}
+	
+	\section{CNN Feature Maps}
+	
+	For an activation tensor
+	
+	\[
+	F\in\R^{H\times W\times D},
+	\]
+	
+	each spatial location may be represented by a \(D\)-dimensional vector.
+	
+	\section{Deep Embeddings}
+	
+	A neural encoder maps input image \(x_i\) to embedding
+	
+	\[
+	\bm{z}_i=f_{\theta}(x_i).
+	\]
+	
+	\section{Latent Representations}
+	
+	Latent entropy may describe dispersion, compression, class structure,
+	or information content in the learned space.
+	
+	\section{Representation Entropy}
+	
+	Representation entropy may be estimated using:
+	
+	\begin{itemize}
+		\item histograms;
+		\item kernel density estimation;
+		\item nearest-neighbor estimators;
+		\item covariance spectra;
+		\item graph-based measures;
+		\item matrix-based Rényi entropy.
+	\end{itemize}
+	
+	\section{Attention Entropy}
+	
+	For attention distribution \(a_{ij}\),
+	
+	\[
+	\Entropy_{\mathrm{attn}}(i)
+	=
+	-\sum_j a_{ij}\log a_{ij}.
+	\]
+	
+	\section*{Representative Models and Datasets}
+	\addcontentsline{toc}{section}{Representative Models and Datasets}
+	
+	\begin{datasetlist}
+		\item ImageNet;
+		\item Segment Anything representations;
+		\item DINO representations.
+	\end{datasetlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% PART III
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\part{Uncertainty Models}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 9
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Probabilistic Entropy}
+	\label{chap:probabilistic-entropy}
+	
+	\begin{chapteroverview}
+		Probabilistic entropy describes uncertainty using probability distributions
+		over labels, model parameters, or predictions.
+	\end{chapteroverview}
+	
+	\section{Bayesian Inference}
+	
+	Bayesian inference updates uncertainty about parameters \(\theta\) using data
+	\(\mathcal{D}\):
+	
+	\[
+	p(\theta\mid\mathcal{D})
+	=
+	\frac{
+		p(\mathcal{D}\mid\theta)p(\theta)
+	}{
+		p(\mathcal{D})
+	}.
+	\]
+	
+	\section{Predictive Entropy}
+	
+	For class probabilities \(p(y=c\mid x)\),
+	
+	\[
+	\Entropy_{\mathrm{pred}}(x)
+	=
+	-\sum_{c=1}^{C}
+	p(y=c\mid x)
+	\log p(y=c\mid x).
+	\]
+	
+	\section{Ensemble Entropy}
+	
+	An ensemble combines predictions from several models:
+	
+	\[
+	\bar{p}(y\mid x)
+	=
+	\frac{1}{M}
+	\sum_{m=1}^{M}
+	p_m(y\mid x).
+	\]
+	
+	Entropy is then computed from \(\bar{p}(y\mid x)\).
+	
+	\section{Monte Carlo Dropout}
+	
+	Repeated stochastic forward passes provide an approximate predictive
+	distribution.
+	
+	\section{Calibration}
+	
+	A calibrated model should assign confidence values that correspond to empirical
+	correctness frequencies.
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 10
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Fuzzy Entropy}
+	\label{chap:fuzzy-entropy}
+	
+	\begin{chapteroverview}
+		Fuzzy entropy quantifies vagueness represented by gradual memberships rather
+		than crisp class assignments.
+	\end{chapteroverview}
+	
+	\section{Fuzzy Sets}
+	
+	A fuzzy set \(A\) on universe \(U\) is characterized by membership function
+	
+	\[
+	\mu_A:U\rightarrow[0,1].
+	\]
+	
+	\section{Membership Functions}
+	
+	Common membership functions include triangular, trapezoidal, Gaussian,
+	sigmoidal, and data-driven forms.
+	
+	\section{Fuzzy Entropy}
+	
+	A generic fuzzy entropy may be defined as
+	
+	\[
+	\Entropy_F(A)
+	=
+	\frac{1}{|U|}
+	\sum_{x\in U}
+	h\bigl(\mu_A(x)\bigr),
+	\]
+	
+	where \(h\) is maximal near \(\mu_A(x)=1/2\) and minimal near \(0\) or \(1\).
+	
+	\section{Type-2 Fuzzy Entropy}
+	
+	Type-2 fuzzy systems assign fuzzy uncertainty to the membership degree itself.
+	
+	\section{Intuitionistic Fuzzy Entropy}
+	
+	An intuitionistic fuzzy set specifies membership, non-membership, and
+	hesitation.
+	
+	\section*{Applications}
+	\addcontentsline{toc}{section}{Applications}
+	
+	\begin{applicationlist}
+		\item medical image analysis;
+		\item image segmentation;
+		\item feature selection.
+	\end{applicationlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 11
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Rough Entropy}
+	\label{chap:rough-entropy}
+	
+	\begin{chapteroverview}
+		Rough entropy measures uncertainty caused by indiscernibility and imperfect
+		approximation.
+	\end{chapteroverview}
+	
+	\section{Rough Sets}
+	
+	Let \(U\) be a finite universe and let \(R\) be an equivalence relation or
+	neighborhood relation on \(U\).
+	
+	\section{Lower Approximation}
+	
+	For \(A\subseteq U\), the lower approximation contains objects that certainly
+	belong to \(A\):
+	
+	\[
+	\Lower{R}(A)
+	=
+	\left\{
+	x\in U:
+	[x]_R\subseteq A
+	\right\}.
+	\]
+	
+	\section{Upper Approximation}
+	
+	The upper approximation contains objects that possibly belong to \(A\):
+	
+	\[
+	\Upper{R}(A)
+	=
+	\left\{
+	x\in U:
+	[x]_R\cap A\neq\varnothing
+	\right\}.
+	\]
+	
+	\section{Boundary Region}
+	
+	The rough boundary is
+	
+	\[
+	\Boundary_R(A)
+	=
+	\Upper{R}(A)
+	\setminus
+	\Lower{R}(A).
+	\]
+	
+	\section{Rough Information Entropy}
+	
+	A rough entropy measure may quantify the size, diversity, or granularity of
+	equivalence classes and approximation regions.
+	
+	\section{Neighborhood Rough Entropy}
+	
+	Neighborhood rough sets replace exact equivalence classes with metric or
+	similarity neighborhoods.
+	
+	\section{Covering Rough Entropy}
+	
+	Covering rough sets permit overlapping granules and provide a more flexible
+	representation than strict partitions.
+	
+	\section*{Applications}
+	\addcontentsline{toc}{section}{Applications}
+	
+	\begin{applicationlist}
+		\item hyperspectral imaging;
+		\item remote sensing;
+		\item medical imaging;
+		\item feature selection;
+		\item segmentation uncertainty.
+	\end{applicationlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 12
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Fuzzy-Rough Entropy}
+	\label{chap:fuzzy-rough-entropy}
+	
+	\begin{chapteroverview}
+		Fuzzy-rough entropy combines gradual membership with approximation-based
+		uncertainty.
+	\end{chapteroverview}
+	
+	\section{Hybrid Uncertainty}
+	
+	Fuzzy uncertainty represents gradual membership, whereas rough uncertainty
+	represents indiscernibility between objects.
+	
+	\section{Fuzzy Neighborhoods}
+	
+	A fuzzy relation
+	
+	\[
+	R:U\times U\rightarrow[0,1]
+	\]
+	
+	assigns a similarity degree to every pair of objects.
+	
+	\section{Fuzzy-Rough Approximations}
+	
+	Fuzzy-rough lower and upper approximations combine fuzzy implication,
+	aggregation, and neighborhood similarity.
+	
+	\section{Hybrid Entropy Measures}
+	
+	A fuzzy-rough entropy may combine:
+	
+	\begin{itemize}
+		\item uncertainty of fuzzy memberships;
+		\item uncertainty of lower and upper approximations;
+		\item fuzzy boundary size;
+		\item neighborhood inconsistency.
+	\end{itemize}
+	
+	\section{Existing Algorithms}
+	
+	This section should classify algorithms according to:
+	
+	\begin{itemize}
+		\item feature selection;
+		\item clustering;
+		\item classification;
+		\item thresholding;
+		\item segmentation;
+		\item deep representation learning.
+	\end{itemize}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 13
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Evidence-Theoretic Entropy}
+	\label{chap:evidence-entropy}
+	
+	\begin{chapteroverview}
+		Evidence-theoretic entropy quantifies uncertainty represented by belief masses
+		assigned to subsets of hypotheses.
+	\end{chapteroverview}
+	
+	\section{Dempster--Shafer Theory}
+	
+	Let \(\Omega\) be a frame of discernment. A basic probability assignment is
+	
+	\[
+	m:2^\Omega\rightarrow[0,1],
+	\]
+	
+	such that
+	
+	\[
+	m(\varnothing)=0,
+	\qquad
+	\sum_{A\subseteq\Omega}m(A)=1.
+	\]
+	
+	\section{Belief Entropy}
+	
+	Belief entropy measures uncertainty in basic probability assignments.
+	
+	\section{Deng Entropy}
+	
+	Deng entropy is defined by
+	
+	\[
+	\Entropy_{\mathrm{Deng}}(m)
+	=
+	-\sum_{A\subseteq\Omega}
+	m(A)
+	\log
+	\left(
+	\frac{m(A)}{2^{|A|}-1}
+	\right).
+	\]
+	
+	\section{Conflict Measures}
+	
+	Conflict measures quantify disagreement between evidence sources.
+	
+	\section{Sensor Fusion}
+	
+	Evidence theory is useful when combining predictions from cameras, LiDAR,
+	radar, thermal sensors, and independent neural networks.
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% PART IV
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\part{Deep Learning}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 14
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Entropy in Convolutional Neural Networks}
+	\label{chap:cnn-entropy}
+	
+	\begin{chapteroverview}
+		This chapter examines entropy in convolutional feature maps, activation
+		patterns, deep representations, and self-supervised learning.
+	\end{chapteroverview}
+	
+	\section{Feature Entropy}
+	
+	Feature entropy may be computed per channel, spatial location, layer, sample,
+	or class.
+	
+	\section{Activation Entropy}
+	
+	Activation entropy measures the diversity and utilization of neural
+	activations.
+	
+	\section{Representation Learning}
+	
+	Entropy can regulate the geometry and information content of learned
+	embeddings.
+	
+	\section{Self-Supervised Learning}
+	
+	Entropy-based objectives may prevent representation collapse while preserving
+	semantic invariance.
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 15
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Entropy in Vision Transformers}
+	\label{chap:vit-entropy}
+	
+	\begin{chapteroverview}
+		This chapter studies entropy in patch tokens, attention matrices, transformer
+		representations, and semantic predictions.
+	\end{chapteroverview}
+	
+	\section{Token Entropy}
+	
+	Token entropy measures diversity or uncertainty among patch-level
+	representations.
+	
+	\section{Attention Entropy}
+	
+	For attention weights \(\{a_{ij}\}\),
+	
+	\[
+	\Entropy_i^{\mathrm{attention}}
+	=
+	-\sum_j a_{ij}\log a_{ij}.
+	\]
+	
+	\section{Patch Uncertainty}
+	
+	Patch uncertainty may combine prediction entropy, token similarity, and
+	attention dispersion.
+	
+	\section{Semantic Entropy}
+	
+	Semantic entropy groups predictions according to semantic equivalence rather
+	than exact output identity.
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 16
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Entropy in Foundation Models}
+	\label{chap:foundation-entropy}
+	
+	\begin{chapteroverview}
+		This chapter investigates uncertainty in large pretrained vision and
+		vision-language models.
+	\end{chapteroverview}
+	
+	\section{Segment Anything}
+	
+	Entropy can be computed over candidate masks, mask confidences, prompt
+	responses, and dense image embeddings.
+	
+	\section{CLIP}
+	
+	Entropy may characterize image--text alignment, class-prompt uncertainty, and
+	zero-shot prediction distributions.
+	
+	\section{DINO}
+	
+	Self-supervised transformer representations can be analyzed using token,
+	feature, covariance, and neighborhood entropy.
+	
+	\section{SAM2}
+	
+	Video segmentation introduces temporal entropy, memory uncertainty, and
+	mask-propagation uncertainty.
+	
+	\section{Vision-Language Models}
+	
+	Vision-language models require uncertainty measures that account for both
+	visual representations and generated language.
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 17
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Entropy-Guided Learning}
+	\label{chap:entropy-guided-learning}
+	
+	\begin{chapteroverview}
+		This chapter explains how entropy can be incorporated directly into model
+		training, sample selection, curriculum design, and explanation.
+	\end{chapteroverview}
+	
+	\section{Entropy Loss}
+	
+	A general entropy-regularized objective may be written as
+	
+	\[
+	\mathcal{L}
+	=
+	\mathcal{L}_{\mathrm{task}}
+	+
+	\lambda\mathcal{L}_{\mathrm{entropy}}.
+	\]
+	
+	\section{Active Learning}
+	
+	Samples with high predictive or region-level entropy can be prioritized for
+	annotation.
+	
+	\section{Curriculum Learning}
+	
+	Training may begin with low-entropy examples and gradually introduce more
+	ambiguous examples.
+	
+	\section{Semi-Supervised Learning}
+	
+	Entropy minimization can encourage confident predictions on unlabeled data:
+	
+	\[
+	\mathcal{L}_{\mathrm{ent}}
+	=
+	-\frac{1}{N}
+	\sum_{i=1}^{N}
+	\sum_{c=1}^{C}
+	p_{ic}\log p_{ic}.
+	\]
+	
+	\section{Explainable Artificial Intelligence}
+	
+	Entropy maps can indicate which regions, channels, tokens, or predictions are
+	responsible for uncertainty.
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% PART V
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\part{Applications}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 18
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Medical Imaging}
+	\label{chap:medical-imaging}
+	
+	\begin{chapteroverview}
+		Medical imaging presents uncertainty caused by noise, weak boundaries,
+		biological variation, limited annotations, and disagreement among experts.
+	\end{chapteroverview}
+	
+	\section{Brain MRI}
+	
+	Entropy methods may support tumor segmentation, tissue classification,
+	registration, and uncertainty estimation.
+	
+	\section{Computed Tomography}
+	
+	Applications include liver segmentation, lesion detection, organ delineation,
+	and low-dose reconstruction.
+	
+	\section{Histopathology}
+	
+	Entropy may describe cellular texture, tissue heterogeneity, and uncertainty in
+	patch-level classification.
+	
+	\section{Retinal Imaging}
+	
+	Applications include retinal vessel segmentation and lesion detection.
+	
+	\section{Skin Lesions}
+	
+	Fuzzy, rough, probabilistic, and deep entropy may help quantify uncertain lesion
+	boundaries.
+	
+	\section*{Representative Datasets}
+	\addcontentsline{toc}{section}{Representative Datasets}
+	
+	\begin{datasetlist}
+		\item BraTS;
+		\item ISIC;
+		\item DRIVE;
+		\item LiTS.
+	\end{datasetlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 19
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Remote Sensing}
+	\label{chap:remote-sensing}
+	
+	\begin{chapteroverview}
+		Remote sensing combines spatial, spectral, temporal, and sensor uncertainty.
+	\end{chapteroverview}
+	
+	\section{Hyperspectral Imaging}
+	
+	Hyperspectral images contain hundreds of correlated spectral bands and often
+	require entropy-based feature selection.
+	
+	\section{Synthetic Aperture Radar}
+	
+	SAR imaging introduces speckle noise and uncertainty associated with scattering
+	mechanisms.
+	
+	\section{Satellite Segmentation}
+	
+	Entropy can support land-cover segmentation, change detection, and active
+	learning.
+	
+	\section*{Representative Datasets}
+	\addcontentsline{toc}{section}{Representative Datasets}
+	
+	\begin{datasetlist}
+		\item Indian Pines;
+		\item Pavia University;
+		\item Salinas.
+	\end{datasetlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 20
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Autonomous Driving}
+	\label{chap:autonomous-driving}
+	
+	\begin{chapteroverview}
+		Autonomous driving requires uncertainty-aware perception under changing
+		illumination, weather, traffic, and sensor conditions.
+	\end{chapteroverview}
+	
+	\section{Road Segmentation}
+	
+	Entropy maps identify uncertain road boundaries and difficult environmental
+	conditions.
+	
+	\section{Lane Detection}
+	
+	Lane uncertainty arises from occlusion, worn markings, shadows, and weather.
+	
+	\section{Object Segmentation}
+	
+	Instance- and semantic-segmentation uncertainty can be measured at pixel,
+	object, and scene levels.
+	
+	\section{Scene Understanding}
+	
+	Graph and region entropy may represent uncertainty in interactions among roads,
+	vehicles, pedestrians, and infrastructure.
+	
+	\section*{Representative Datasets}
+	\addcontentsline{toc}{section}{Representative Datasets}
+	
+	\begin{datasetlist}
+		\item Cityscapes;
+		\item BDD100K.
+	\end{datasetlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 21
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Industrial Vision}
+	\label{chap:industrial-vision}
+	
+	\begin{chapteroverview}
+		Industrial vision uses entropy for defect detection, quality assessment, and
+		uncertainty-aware inspection.
+	\end{chapteroverview}
+	
+	\section{Surface Inspection}
+	
+	Local texture entropy can reveal scratches, cracks, contamination, and
+	irregular patterns.
+	
+	\section{Defect Detection}
+	
+	Feature and latent entropy can help distinguish rare defects from normal
+	variation.
+	
+	\section{Quality Control}
+	
+	Entropy-based confidence estimates can determine when an automatic system
+	should defer to human inspection.
+	
+	\section*{Representative Datasets}
+	\addcontentsline{toc}{section}{Representative Datasets}
+	
+	\begin{datasetlist}
+		\item MVTec AD.
+	\end{datasetlist}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% PART VI
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\part{Unified Framework}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 22
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{A Unified Entropy Framework}
+	\label{chap:unified-framework}
+	
+	\begin{chapteroverview}
+		This chapter unifies representations, uncertainty models, entropy measures,
+		learning architectures, and applications.
+	\end{chapteroverview}
+	
+	\section{Evolution of Representations}
+	
+	\begin{center}
+		\begin{tikzpicture}[
+			node distance=7mm,
+			stage/.style={
+				draw,
+				rounded corners,
+				minimum width=6.8cm,
+				minimum height=8mm,
+				align=center,
+				fill=green!6
+			},
+			arrow/.style={
+				-{Latex[length=2.5mm]},
+				thick
+			}
+			]
+			
+			\node[stage] (p1) {Pixels};
+			\node[stage, below=of p1] (p2) {Local neighborhoods and textures};
+			\node[stage, below=of p2] (p3) {Regions and superpixels};
+			\node[stage, below=of p3] (p4) {Graphs and structural representations};
+			\node[stage, below=of p4] (p5) {Deep features and latent embeddings};
+			\node[stage, below=of p5] (p6) {Foundation-model representations};
+			
+			\draw[arrow] (p1) -- (p2);
+			\draw[arrow] (p2) -- (p3);
+			\draw[arrow] (p3) -- (p4);
+			\draw[arrow] (p4) -- (p5);
+			\draw[arrow] (p5) -- (p6);
+			
+		\end{tikzpicture}
+	\end{center}
+	
+	\section{Evolution of Uncertainty Models}
+	
+	\begin{center}
+		\begin{tikzpicture}[
+			node distance=7mm,
+			stage/.style={
+				draw,
+				rounded corners,
+				minimum width=6.8cm,
+				minimum height=8mm,
+				align=center,
+				fill=orange!8
+			},
+			arrow/.style={
+				-{Latex[length=2.5mm]},
+				thick
+			}
+			]
+			
+			\node[stage] (u1) {Probability};
+			\node[stage, below=of u1] (u2) {Fuzzy sets};
+			\node[stage, below=of u2] (u3) {Rough sets};
+			\node[stage, below=of u3] (u4) {Fuzzy-rough sets};
+			\node[stage, below=of u4] (u5) {Evidence theory};
+			\node[stage, below=of u5] (u6) {Learned uncertainty};
+			
+			\draw[arrow] (u1) -- (u2);
+			\draw[arrow] (u2) -- (u3);
+			\draw[arrow] (u3) -- (u4);
+			\draw[arrow] (u4) -- (u5);
+			\draw[arrow] (u5) -- (u6);
+			
+		\end{tikzpicture}
+	\end{center}
+	
+	\section{Evolution of Entropy Measures}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Entropy measures and their underlying representations.}
+		\label{tab:entropy-representations}
+		
+		\begin{tabularx}{\textwidth}{
+				>{\raggedright\arraybackslash}p{0.29\textwidth}
+				>{\raggedright\arraybackslash}X
+			}
+			\toprule
+			Representation &
+			Representative entropy measures
+			\\
+			\midrule
+			
+			Pixel histograms &
+			Shannon, Rényi, Tsallis
+			\\
+			
+			Local neighborhoods &
+			Local entropy, approximate entropy, sample entropy
+			\\
+			
+			Textures &
+			GLCM entropy, wavelet entropy, multiresolution entropy
+			\\
+			
+			Regions &
+			Region entropy, partition entropy
+			\\
+			
+			Graphs &
+			Structural entropy, spectral entropy, random-walk entropy
+			\\
+			
+			Fuzzy memberships &
+			Fuzzy entropy, intuitionistic fuzzy entropy
+			\\
+			
+			Rough approximations &
+			Rough entropy, neighborhood rough entropy
+			\\
+			
+			Fuzzy-rough structures &
+			Fuzzy-rough entropy
+			\\
+			
+			Belief masses &
+			Evidence entropy, Deng entropy
+			\\
+			
+			Deep representations &
+			Feature entropy, latent entropy, attention entropy
+			\\
+			
+			\bottomrule
+		\end{tabularx}
+	\end{table}
+	
+	\section{Evolution of Learning Models}
+	
+	The relevant learning paradigms include:
+	
+	\begin{enumerate}
+		\item classical image-processing algorithms;
+		\item statistical machine learning;
+		\item convolutional neural networks;
+		\item graph neural networks;
+		\item Vision Transformers;
+		\item self-supervised models;
+		\item vision foundation models;
+		\item multimodal foundation models.
+	\end{enumerate}
+	
+	\section{Unified Mathematical Formulation}
+	
+	Let
+	
+	\[
+	\mathcal{R}(x;\theta)
+	\]
+	
+	denote a representation of input \(x\), where \(\theta\) may contain fixed
+	parameters, learned parameters, or both.
+	
+	Let
+	
+	\[
+	\mathcal{U}
+	\bigl(
+	\mathcal{R}(x;\theta)
+	\bigr)
+	\]
+	
+	denote an uncertainty structure constructed on that representation.
+	
+	A general entropy functional may then be written as
+	
+	\[
+	\boxed{
+		\Entropy
+		=
+		\Entropy
+		\left[
+		\mathcal{U}
+		\left(
+		\mathcal{R}(x;\theta)
+		\right)
+		\right].
+	}
+	\]
+	
+	The representation may consist of:
+	
+	\begin{itemize}
+		\item pixel values;
+		\item local neighborhoods;
+		\item image regions;
+		\item graph nodes and edges;
+		\item CNN feature maps;
+		\item transformer tokens;
+		\item latent embeddings.
+	\end{itemize}
+	
+	The uncertainty model may be:
+	
+	\begin{itemize}
+		\item probabilistic;
+		\item fuzzy;
+		\item rough;
+		\item fuzzy-rough;
+		\item evidence-theoretic;
+		\item learned.
+	\end{itemize}
+	
+	\section{Local and Global Entropy Optimization}
+	
+	For segmentation, local entropy and global representation entropy may have
+	different objectives.
+	
+	Local neighborhood uncertainty should often be minimized:
+	
+	\[
+	\min_{\theta}
+	\Entropy_{\mathrm{local}}.
+	\]
+	
+	At the same time, global representation diversity or discriminability may be
+	maximized:
+	
+	\[
+	\max_{\theta}
+	\Entropy_{\mathrm{global}}.
+	\]
+	
+	A combined objective is
+	
+	\[
+	\mathcal{L}
+	=
+	\mathcal{L}_{\mathrm{seg}}
+	+
+	\lambda_{\mathrm{local}}
+	\Entropy_{\mathrm{local}}
+	-
+	\lambda_{\mathrm{global}}
+	\Entropy_{\mathrm{global}}.
+	\]
+	
+	A multiscale extension is
+	
+	\[
+	\mathcal{L}
+	=
+	\mathcal{L}_{\mathrm{seg}}
+	+
+	\lambda_p\Entropy_{\mathrm{pixel}}
+	+
+	\lambda_r\Entropy_{\mathrm{region}}
+	+
+	\lambda_g\Entropy_{\mathrm{graph}}
+	-
+	\lambda_d\Entropy_{\mathrm{dataset}}.
+	\]
+	
+	Here:
+	
+	\begin{itemize}
+		\item pixel entropy promotes locally confident predictions;
+		\item region entropy promotes coherent segmented regions;
+		\item graph entropy promotes structural consistency;
+		\item dataset-level entropy prevents representational collapse and
+		preserves class diversity.
+	\end{itemize}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 23
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Future Directions}
+	\label{chap:future-directions}
+	
+	\begin{chapteroverview}
+		This chapter identifies emerging combinations of classical entropy theory,
+		rough and fuzzy models, graphs, deep learning, and foundation models.
+	\end{chapteroverview}
+	
+	\section{Deep Rough Entropy}
+	
+	Deep rough entropy applies rough approximations to CNN or transformer
+	embeddings rather than raw attributes.
+	
+	A possible pipeline is:
+	
+	\begin{center}
+		\begin{tikzpicture}[
+			node distance=7mm,
+			box/.style={
+				draw,
+				rounded corners,
+				minimum width=7cm,
+				minimum height=8mm,
+				align=center,
+				fill=blue!5
+			},
+			arrow/.style={
+				-{Latex[length=2.5mm]},
+				thick
+			}
+			]
+			
+			\node[box] (image) {Input image};
+			\node[box, below=of image] (encoder)
+			{CNN or Vision Transformer encoder};
+			\node[box, below=of encoder] (embedding)
+			{Pixel, patch, or region embeddings};
+			\node[box, below=of embedding] (neighborhood)
+			{Neighborhood or similarity relation};
+			\node[box, below=of neighborhood] (rough)
+			{Lower, upper, and boundary approximations};
+			\node[box, below=of rough] (entropy)
+			{Deep rough entropy};
+			\node[box, below=of entropy] (objective)
+			{Regularization, refinement, or uncertainty estimation};
+			
+			\draw[arrow] (image) -- (encoder);
+			\draw[arrow] (encoder) -- (embedding);
+			\draw[arrow] (embedding) -- (neighborhood);
+			\draw[arrow] (neighborhood) -- (rough);
+			\draw[arrow] (rough) -- (entropy);
+			\draw[arrow] (entropy) -- (objective);
+			
+		\end{tikzpicture}
+	\end{center}
+	
+	\section{Graph Rough Entropy}
+	
+	Graph rough entropy defines approximations over graph neighborhoods,
+	communities, or diffusion structures.
+	
+	\section{Fuzzy-Rough Deep Learning}
+	
+	Fuzzy-rough deep learning combines:
+	
+	\begin{itemize}
+		\item fuzzy similarity between learned embeddings;
+		\item fuzzy lower and upper approximations;
+		\item differentiable fuzzy-rough entropy;
+		\item end-to-end neural optimization.
+	\end{itemize}
+	
+	\section{Multiscale Entropy}
+	
+	A multiscale system may jointly measure uncertainty at:
+	
+	\begin{enumerate}
+		\item pixel level;
+		\item local-neighborhood level;
+		\item region level;
+		\item graph level;
+		\item embedding level;
+		\item dataset level.
+	\end{enumerate}
+	
+	\section{Entropy-Aware Foundation Models}
+	
+	Research questions include:
+	
+	\begin{itemize}
+		\item uncertainty of prompt-conditioned masks;
+		\item entropy of dense foundation-model embeddings;
+		\item token- and region-level calibration;
+		\item cross-modal semantic uncertainty;
+		\item reliability under domain shift.
+	\end{itemize}
+	
+	\section{Uncertainty-Aware Artificial Intelligence}
+	
+	Entropy may support:
+	
+	\begin{itemize}
+		\item selective prediction;
+		\item human-in-the-loop decision-making;
+		\item active learning;
+		\item model calibration;
+		\item out-of-distribution detection;
+		\item explainability;
+		\item safety-critical vision.
+	\end{itemize}
+	
+	\section{Open Research Challenges}
+	
+	\begin{researchquestions}
+		\item How should entropy be defined for high-dimensional deep embeddings?
+		\item How can rough and fuzzy approximations be made fully differentiable?
+		\item Which entropy objectives improve segmentation without causing
+		over-smoothing?
+		\item How should local entropy minimization be balanced against global
+		entropy maximization?
+		\item How can entropy measures be evaluated independently of downstream
+		accuracy?
+		\item How should uncertainty be calibrated across pixels, regions,
+		graphs, and complete images?
+		\item Can one unified entropy measure operate consistently across
+		multiple representation levels?
+	\end{researchquestions}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Chapter 24
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\chapter{Conclusions}
+	\label{chap:conclusions}
+	
+	Entropy in image processing has evolved from a statistic computed over
+	intensity histograms into a broad family of measures operating on local
+	neighborhoods, textures, regions, graphs, feature maps, attention patterns,
+	and latent representations.
+	
+	At the same time, models of uncertainty have expanded from probability to
+	fuzzy sets, rough sets, fuzzy-rough approximations, evidence theory, Bayesian
+	deep learning, and learned uncertainty.
+	
+	The unified perspective developed in this book can be summarized as
+	
+	\[
+	\boxed{
+		\text{representation}
+		+
+		\text{uncertainty model}
+		+
+		\text{entropy functional}
+		+
+		\text{learning objective}
+		+
+		\text{application}.
+	}
+	\]
+	
+	This viewpoint supports both systematic comparison of existing methods and the
+	development of new methods such as deep rough entropy, graph rough entropy,
+	fuzzy-rough representation learning, multiscale entropy optimization, and
+	entropy-aware foundation models.
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Appendices
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\appendix
+	
+	\chapter{Mathematical Background}
+	\label{app:mathematical-background}
+	
+	\section{Probability Distributions}
+	
+	A discrete probability distribution satisfies
+	
+	\[
+	p_i\geq0,
+	\qquad
+	\sum_{i=1}^{n}p_i=1.
+	\]
+	
+	\section{Similarity Relations}
+	
+	A similarity relation may be defined using a distance \(d\):
+	
+	\[
+	R_{\sigma}(x,y)
+	=
+	\exp
+	\left(
+	-\frac{d(x,y)^2}{2\sigma^2}
+	\right).
+	\]
+	
+	\section{Graph Construction}
+	
+	Given embeddings \(\bm{z}_1,\ldots,\bm{z}_n\), a weighted graph may use
+	
+	\[
+	w_{ij}
+	=
+	\exp
+	\left(
+	-\frac{
+		\lVert\bm{z}_i-\bm{z}_j\rVert_2^2
+	}{
+		2\sigma^2
+	}
+	\right).
+	\]
+	
+	\chapter{Experimental Protocol Templates}
+	\label{app:experimental-protocols}
+	
+	\section{Segmentation Protocol}
+	
+	A standard segmentation experiment should specify:
+	
+	\begin{itemize}
+		\item dataset;
+		\item train, validation, and test splits;
+		\item architecture;
+		\item preprocessing;
+		\item augmentation;
+		\item optimizer;
+		\item learning-rate schedule;
+		\item entropy formulation;
+		\item regularization coefficient;
+		\item evaluation metrics;
+		\item statistical testing.
+	\end{itemize}
+	
+	\section{Segmentation Metrics}
+	
+	Intersection over Union is
+	
+	\[
+	\operatorname{IoU}
+	=
+	\frac{
+		|\widehat{Y}\cap Y|
+	}{
+		|\widehat{Y}\cup Y|
+	}.
+	\]
+	
+	The Dice coefficient is
+	
+	\[
+	\operatorname{Dice}
+	=
+	\frac{
+		2|\widehat{Y}\cap Y|
+	}{
+		|\widehat{Y}|+|Y|
+	}.
+	\]
+	
+	\section{Uncertainty Metrics}
+	
+	Recommended uncertainty metrics include:
+	
+	\begin{itemize}
+		\item expected calibration error;
+		\item negative log-likelihood;
+		\item Brier score;
+		\item area under the risk--coverage curve;
+		\item boundary uncertainty accuracy;
+		\item out-of-distribution detection performance.
+	\end{itemize}
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Back matter
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	\backmatter
+	
+	\chapter*{Bibliography}
+	\addcontentsline{toc}{chapter}{Bibliography}
+	
+	A BibTeX bibliography can be enabled by replacing this placeholder with:
+	
+	\begin{quote}
+		\texttt{\textbackslash bibliographystyle\{plain\}}\\
+		\texttt{\textbackslash bibliography\{references\}}
+	\end{quote}
+	
+	Alternatively, the document may use the \texttt{biblatex} package and
+	\texttt{\textbackslash printbibliography}.
+	
+	\chapter*{Index}
+	\addcontentsline{toc}{chapter}{Index}
+	
+	An index may be generated later using the \texttt{makeidx} or
+	\texttt{imakeidx} package.
+	
+\end{document}
