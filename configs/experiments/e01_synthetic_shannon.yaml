@@ -1,0 +1,47 @@
+experiment:
+  name: e01_synthetic_shannon
+  seed: 42
+  output_directory: outputs/runs/e01_synthetic_shannon
+
+dataset:
+  name: synthetic_shapes
+  image_size:
+    - 256
+    - 256
+  sample_count: 16
+
+preprocessing:
+  resize:
+    height: 256
+    width: 256
+  normalization:
+    mode: zero_one
+  color_space:
+    name: grayscale
+
+representation:
+  name: pixels
+
+entropy:
+  name: shannon
+  parameters:
+    bins: 64
+    normalized: true
+    logarithm_base: 2
+
+segmentation:
+  name: maximum_entropy_threshold
+  parameters:
+    classes: 2
+
+evaluation:
+  metrics:
+    - mean_iou
+    - dice
+    - pixel_accuracy
+
+output:
+  save_original_image: true
+  save_entropy_map: true
+  save_segmentation: true
+  save_metrics: true
