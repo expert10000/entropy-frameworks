@@ -49,10 +49,13 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
     representation_name = config.get("representation", {}).get("name", "grayscale")
     representation = build_representation(representation_name).transform(sample.image)
     entropy_config = config.get("entropy", {}).get("parameters", {})
+    entropy_name = config.get("entropy", {}).get("name", "shannon")
+    entropy_scope = config.get("entropy", {}).get("scope", "local")
     bins = int(entropy_config.get("bins", 64))
     window_radius = int(entropy_config.get("window_radius", 4))
     entropy_result = LocalEntropyMap(window_radius=window_radius, bins=bins).compute(representation.data)
 
+    segmentation_name = config.get("segmentation", {}).get("name", "maximum_entropy_threshold")
     segmenter_config = config.get("segmentation", {}).get("parameters", {})
     threshold_bins = int(segmenter_config.get("bins", bins))
     foreground = segmenter_config.get("foreground", "high")
@@ -91,6 +94,9 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         runtime={"duration_seconds": duration},
         metadata={
             "experiment": experiment.get("name", "vertical_slice"),
+            "entropy_measure": entropy_name,
+            "entropy_scope": entropy_scope,
+            "segmentation_method": segmentation_name,
             "threshold": threshold,
         },
     )

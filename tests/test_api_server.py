@@ -2,6 +2,7 @@ from pathlib import Path
 
 from visionentropy.api.server import (
     build_run_config,
+    build_run_slug,
     dataset_preview_payload,
     resolve_local_path,
     run_history_payload,
@@ -33,6 +34,9 @@ def test_build_run_config_uses_ui_parameters() -> None:
             "dataset": "synthetic_shapes",
             "sampleIndex": 2,
             "representation": "lab",
+            "entropyMeasure": "shannon",
+            "entropyScope": "local",
+            "segmentationMethod": "kapur",
             "height": 96,
             "width": 128,
             "bins": 32,
@@ -43,7 +47,25 @@ def test_build_run_config_uses_ui_parameters() -> None:
     assert config["dataset"]["sample_index"] == 2
     assert config["preprocessing"]["resize"] == {"height": 96, "width": 128}
     assert config["representation"] == {"name": "lab"}
+    assert config["entropy"]["name"] == "shannon"
+    assert config["entropy"]["scope"] == "local"
     assert config["entropy"]["parameters"] == {"bins": 32, "window_radius": 3}
+    assert config["segmentation"]["name"] == "kapur"
+    assert "synthetic_002_shannon_local_kapur_r3_b32" in config["experiment"]["name"]
+
+
+def test_build_run_slug_encodes_algorithms() -> None:
+    slug = build_run_slug(
+        dataset_name="synthetic_shapes",
+        sample_index=0,
+        entropy_measure="shannon",
+        entropy_scope="local",
+        segmentation_method="kapur",
+        window_radius=4,
+        bins=64,
+    )
+
+    assert slug == "synthetic_000_shannon_local_kapur_r4_b64"
 
 
 def test_run_result_payload_returns_artifact_urls(tmp_path: Path) -> None:

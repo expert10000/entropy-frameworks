@@ -283,10 +283,22 @@ def build_run_config(payload: dict[str, Any]) -> dict[str, Any]:
     height = int(payload.get("height", 256))
     width = int(payload.get("width", 256))
     representation = payload.get("representation", "grayscale")
+    entropy_measure = payload.get("entropyMeasure", "shannon")
+    entropy_scope = payload.get("entropyScope", "local")
+    segmentation_method = payload.get("segmentationMethod", "kapur")
     bins = int(payload.get("bins", 64))
     window_radius = int(payload.get("windowRadius", 4))
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    output_name = payload.get("outputName") or f"ui_{dataset_name}_{sample_index}_{representation}_{timestamp}"
+    run_slug = build_run_slug(
+        dataset_name=dataset_name,
+        sample_index=sample_index,
+        entropy_measure=entropy_measure,
+        entropy_scope=entropy_scope,
+        segmentation_method=segmentation_method,
+        window_radius=window_radius,
+        bins=bins,
+    )
+    output_name = payload.get("outputName") or f"{run_slug}_{timestamp}"
 
     return {
         "experiment": {
@@ -304,18 +316,59 @@ def build_run_config(payload: dict[str, Any]) -> dict[str, Any]:
             "normalization": {"mode": "zero_one"},
         },
         "representation": {"name": representation},
-        "entropy": {"name": "shannon", "parameters": {"bins": bins, "window_radius": window_radius}},
+        "entropy": {
+            "name": entropy_measure,
+            "scope": entropy_scope,
+            "parameters": {"bins": bins, "window_radius": window_radius},
+        },
         "segmentation": {
-            "name": "maximum_entropy_threshold",
+            "name": segmentation_method,
             "parameters": {"bins": bins, "foreground": payload.get("foreground", "high")},
         },
     }
+
+
+def build_run_slug(
+    *,
+    dataset_name: str,
+    sample_index: int,
+    entropy_measure: str,
+    entropy_scope: str,
+    segmentation_method: str,
+    window_radius: int,
+    bins: int,
+) -> str:
+    dataset_slug = dataset_name.replace("_shapes", "").replace("_examples", "")
+    segmentation_slug = segmentation_method.replace("maximum_entropy_threshold", "kapur")
+    parts = [
+        dataset_slug,
+        f"{sample_index:03d}",
+        entropy_measure,
+        entropy_scope,
+        segmentation_slug,
+        f"r{window_radius}",
+        f"b{bins}",
+    ]
+    return "_".join(slugify(part) for part in parts)
+
+
+def slugify(value: object) -> str:
+    text = str(value).strip().lower()
+    cleaned = []
+    for character in text:
+        cleaned.append(character if character.isalnum() else "_")
+    return "_".join("".join(cleaned).split("_"))
 
 
 def run_result_payload(result: Any) -> dict[str, Any]:
     return {
         "sampleId": result.sample_id,
         "experiment": result.metadata.get("experiment"),
+        "algorithm": {
+            "entropyMeasure": result.metadata.get("entropy_measure"),
+            "entropyScope": result.metadata.get("entropy_scope"),
+            "segmentationMethod": result.metadata.get("segmentation_method"),
+        },
         "outputDirectory": result.artifacts.get("summary", "").replace("\\", "/").rsplit("/", 1)[0],
         "threshold": result.metadata.get("threshold"),
         "metrics": result.metrics,

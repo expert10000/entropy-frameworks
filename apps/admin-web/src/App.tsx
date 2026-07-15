@@ -118,6 +118,9 @@ function App() {
   const [dataset, setDataset] = useState("synthetic_shapes");
   const [sampleIndex, setSampleIndex] = useState(0);
   const [representation, setRepresentation] = useState("grayscale");
+  const [entropyMeasure, setEntropyMeasure] = useState("shannon");
+  const [entropyScope, setEntropyScope] = useState("local");
+  const [segmentationMethod, setSegmentationMethod] = useState("kapur");
   const [height, setHeight] = useState(256);
   const [width, setWidth] = useState(256);
   const [bins, setBins] = useState(64);
@@ -202,6 +205,9 @@ function App() {
           dataset,
           sampleIndex,
           representation,
+          entropyMeasure,
+          entropyScope,
+          segmentationMethod,
           height,
           width,
           bins,
@@ -224,6 +230,15 @@ function App() {
   const resultArtifacts = runResult?.artifacts ?? {};
   const selectedArtifactTitle =
     artifactOrder.find(([key]) => key === selectedArtifact)?.[1] ?? "Artifact";
+  const runIdPreview = buildRunIdPreview({
+    dataset,
+    sampleIndex,
+    entropyMeasure,
+    entropyScope,
+    segmentationMethod,
+    windowRadius,
+    bins
+  });
 
   return (
     <main className="app-shell">
@@ -306,6 +321,35 @@ function App() {
             </select>
           </label>
 
+          <label>
+            Entropy measure
+            <select value={entropyMeasure} onChange={(event) => setEntropyMeasure(event.target.value)}>
+              <option value="shannon">Shannon</option>
+              <option value="renyi" disabled>Renyi pending</option>
+              <option value="tsallis" disabled>Tsallis pending</option>
+            </select>
+          </label>
+
+          <label>
+            Entropy scope
+            <select value={entropyScope} onChange={(event) => setEntropyScope(event.target.value)}>
+              <option value="local">local</option>
+              <option value="global" disabled>global pending</option>
+              <option value="region" disabled>region pending</option>
+            </select>
+          </label>
+
+          <label>
+            Segmentation method
+            <select value={segmentationMethod} onChange={(event) => setSegmentationMethod(event.target.value)}>
+              <option value="kapur">Kapur maximum entropy</option>
+              <option value="otsu" disabled>Otsu threshold pending</option>
+              <option value="local_adaptive" disabled>Local adaptive pending</option>
+              <option value="kmeans" disabled>k-means pending</option>
+              <option value="entropy_intensity" disabled>Entropy + intensity pending</option>
+            </select>
+          </label>
+
           <div className="two-column">
             <label>
               Height
@@ -343,6 +387,11 @@ function App() {
             <Play size={18} />
             <span>{isRunning ? "Running" : "Run Slice"}</span>
           </button>
+
+          <div className="run-id-preview">
+            <span>Run ID</span>
+            <code>{runIdPreview}</code>
+          </div>
         </section>
 
         <section className="control-panel">
@@ -517,6 +566,14 @@ function App() {
               <div>
                 <dt>Window radius</dt>
                 <dd>{windowRadius}</dd>
+              </div>
+              <div>
+                <dt>Entropy</dt>
+                <dd>{entropyMeasure} / {entropyScope}</dd>
+              </div>
+              <div>
+                <dt>Segmenter</dt>
+                <dd>{segmentationMethod}</dd>
               </div>
             </dl>
           </article>
@@ -693,10 +750,14 @@ function App() {
             <pre>{`dataset: ${dataset}
 representation: ${representation}
 entropy:
+  name: ${entropyMeasure}
+  scope: ${entropyScope}
   bins: ${bins}
   window_radius: ${windowRadius}
 segmentation:
-  name: maximum_entropy_threshold`}</pre>
+  name: ${segmentationMethod}
+run_id:
+  ${runIdPreview}_<timestamp>`}</pre>
           </article>
         </section>
       </section>
@@ -767,6 +828,37 @@ function apiFileUrl(path: string) {
 
 function formatMetric(value?: number) {
   return value == null ? "0.000" : value.toFixed(3);
+}
+
+function buildRunIdPreview({
+  dataset,
+  sampleIndex,
+  entropyMeasure,
+  entropyScope,
+  segmentationMethod,
+  windowRadius,
+  bins
+}: {
+  dataset: string;
+  sampleIndex: number;
+  entropyMeasure: string;
+  entropyScope: string;
+  segmentationMethod: string;
+  windowRadius: number;
+  bins: number;
+}) {
+  const datasetSlug = dataset.replace("_shapes", "").replace("_examples", "");
+  return [
+    datasetSlug,
+    String(sampleIndex).padStart(3, "0"),
+    entropyMeasure,
+    entropyScope,
+    segmentationMethod,
+    `r${windowRadius}`,
+    `b${bins}`
+  ]
+    .map((part) => part.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""))
+    .join("_");
 }
 
 export default App;
