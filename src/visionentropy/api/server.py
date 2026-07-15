@@ -12,6 +12,7 @@ import numpy as np
 from skimage.io import imsave
 
 from visionentropy.datasets.registry import dataset_status, load_dataset_specs
+from visionentropy.datasets.synthetic_shapes import SYNTHETIC_BENCHMARK_PRESETS
 from visionentropy.pipeline import run_baseline_entropy_comparison, run_vertical_slice
 from visionentropy.pipeline.vertical_slice import _load_sample, _preprocess_sample, _to_uint8_rgb, _to_viewable_image
 from visionentropy.representations import build_representation
@@ -44,6 +45,9 @@ class VisionEntropyApiHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/datasets":
                 self._send_json(dataset_catalog_payload())
+                return
+            if parsed.path == "/api/synthetic-presets":
+                self._send_json(synthetic_presets_payload())
                 return
             if parsed.path == "/api/datasets/preview":
                 query = parse_query(parsed.query)
@@ -232,6 +236,28 @@ def dataset_catalog_payload() -> dict[str, Any]:
     return {"datasets": datasets}
 
 
+def synthetic_presets_payload() -> dict[str, Any]:
+    labels = {
+        "s01_clean_high_contrast": "S01 clean high contrast",
+        "s02_gaussian_noise": "S02 Gaussian noise",
+        "s03_impulse_noise": "S03 impulse noise",
+        "s04_blurred_boundaries": "S04 blurred boundaries",
+        "s05_textured_foreground": "S05 textured foreground",
+        "s06_textured_background": "S06 textured background",
+        "s07_overlapping_objects": "S07 overlapping objects",
+        "s08_low_contrast": "S08 low contrast",
+    }
+    return {
+        "presets": [
+            {"id": "custom", "label": "Custom", "parameters": {}},
+            *[
+                {"id": preset, "label": labels[preset], "parameters": parameters}
+                for preset, parameters in SYNTHETIC_BENCHMARK_PRESETS.items()
+            ],
+        ]
+    }
+
+
 def dataset_preview_payload(query: dict[str, str]) -> dict[str, Any]:
     dataset_name = query.get("name", "synthetic_shapes")
     sample_index = int(query.get("sample_index", "0"))
@@ -244,6 +270,7 @@ def dataset_preview_payload(query: dict[str, str]) -> dict[str, Any]:
             "name": dataset_name,
             "sample_index": sample_index,
             "image_size": [height, width],
+            **synthetic_parameters_from_payload(query),
         }
     )
     sample = _preprocess_sample(
@@ -318,6 +345,7 @@ def build_run_config(payload: dict[str, Any]) -> dict[str, Any]:
             "sample_index": sample_index,
             "image_size": [height, width],
             "sample_count": max(sample_index + 1, 16),
+            **synthetic_parameters_from_payload(payload),
         },
         "preprocessing": {
             "resize": {"height": height, "width": width},
@@ -372,6 +400,7 @@ def build_comparison_config(payload: dict[str, Any]) -> dict[str, Any]:
             "sample_index": sample_index,
             "image_size": [height, width],
             "sample_count": max(sample_index + 1, 16),
+            **synthetic_parameters_from_payload(payload),
         },
         "preprocessing": {
             "resize": {"height": height, "width": width},
@@ -393,6 +422,36 @@ def build_comparison_config(payload: dict[str, Any]) -> dict[str, Any]:
             ],
         },
     }
+
+
+def synthetic_parameters_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    synthetic = payload.get("synthetic", payload)
+    preset = synthetic.get("syntheticPreset", synthetic.get("preset", "custom"))
+    return {
+        "preset": preset,
+        "shape_count": int(synthetic.get("shapeCount", synthetic.get("shape_count", 3))),
+        "foreground_texture": float(
+            synthetic.get("foregroundTexture", synthetic.get("foreground_texture", 0.0))
+        ),
+        "background_texture": float(
+            synthetic.get("backgroundTexture", synthetic.get("background_texture", 0.0))
+        ),
+        "gaussian_noise": float(synthetic.get("gaussianNoise", synthetic.get("gaussian_noise", 0.0))),
+        "impulse_noise": float(synthetic.get("impulseNoise", synthetic.get("impulse_noise", 0.0))),
+        "boundary_blur": float(synthetic.get("boundaryBlur", synthetic.get("boundary_blur", 0.7))),
+        "illumination_gradient": float(
+            synthetic.get("illuminationGradient", synthetic.get("illumination_gradient", 0.0))
+        ),
+        "allow_overlap": parse_bool(synthetic.get("allowOverlap", synthetic.get("allow_overlap", False))),
+        "contrast": float(synthetic.get("syntheticContrast", synthetic.get("contrast", 1.0))),
+        "seed": int(synthetic.get("syntheticSeed", synthetic.get("seed", 42))),
+    }
+
+
+def parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def build_run_slug(

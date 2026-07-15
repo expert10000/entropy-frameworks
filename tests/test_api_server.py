@@ -9,6 +9,8 @@ from visionentropy.api.server import (
     resolve_local_path,
     run_history_payload,
     run_result_payload,
+    synthetic_parameters_from_payload,
+    synthetic_presets_payload,
 )
 from visionentropy.pipeline import run_baseline_entropy_comparison, run_vertical_slice
 
@@ -30,6 +32,47 @@ def test_dataset_preview_payload_writes_preview_images() -> None:
     assert payload["images"]["mask"].startswith("/api/files")
 
 
+def test_synthetic_presets_payload_lists_benchmarks() -> None:
+    payload = synthetic_presets_payload()
+
+    assert payload["presets"][0]["id"] == "custom"
+    assert [preset["id"] for preset in payload["presets"][1:]] == [
+        "s01_clean_high_contrast",
+        "s02_gaussian_noise",
+        "s03_impulse_noise",
+        "s04_blurred_boundaries",
+        "s05_textured_foreground",
+        "s06_textured_background",
+        "s07_overlapping_objects",
+        "s08_low_contrast",
+    ]
+
+
+def test_synthetic_parameters_from_payload_normalizes_ui_fields() -> None:
+    parameters = synthetic_parameters_from_payload(
+        {
+            "synthetic": {
+                "syntheticPreset": "custom",
+                "shapeCount": 4,
+                "foregroundTexture": 0.2,
+                "backgroundTexture": 0.1,
+                "gaussianNoise": 0.03,
+                "impulseNoise": 0.04,
+                "boundaryBlur": 1.5,
+                "illuminationGradient": 0.2,
+                "allowOverlap": True,
+                "syntheticContrast": 0.7,
+                "syntheticSeed": 123,
+            }
+        }
+    )
+
+    assert parameters["shape_count"] == 4
+    assert parameters["foreground_texture"] == 0.2
+    assert parameters["allow_overlap"] is True
+    assert parameters["seed"] == 123
+
+
 def test_build_run_config_uses_ui_parameters() -> None:
     config = build_run_config(
         {
@@ -43,6 +86,7 @@ def test_build_run_config_uses_ui_parameters() -> None:
             "width": 128,
             "bins": 32,
             "windowRadius": 3,
+            "synthetic": {"syntheticPreset": "s02_gaussian_noise"},
         }
     )
 
@@ -53,6 +97,7 @@ def test_build_run_config_uses_ui_parameters() -> None:
     assert config["entropy"]["scope"] == "local"
     assert config["entropy"]["parameters"] == {"bins": 32, "window_radius": 3}
     assert config["segmentation"]["name"] == "kapur"
+    assert config["dataset"]["preset"] == "s02_gaussian_noise"
     assert "synthetic_002_shannon_local_kapur_r3_b32" in config["experiment"]["name"]
 
 

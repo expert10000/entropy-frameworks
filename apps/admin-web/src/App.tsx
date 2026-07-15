@@ -143,6 +143,54 @@ const representationCatalog = [
   }
 ];
 
+const syntheticPresets = [
+  {
+    id: "custom",
+    label: "Custom",
+    values: {}
+  },
+  {
+    id: "s01_clean_high_contrast",
+    label: "S01 clean high contrast",
+    values: { shapeCount: 3, syntheticContrast: 1.15, boundaryBlur: 0.5, illuminationGradient: 0.05, allowOverlap: false, syntheticSeed: 101 }
+  },
+  {
+    id: "s02_gaussian_noise",
+    label: "S02 Gaussian noise",
+    values: { shapeCount: 3, gaussianNoise: 0.08, syntheticContrast: 1, boundaryBlur: 0.6, allowOverlap: false, syntheticSeed: 102 }
+  },
+  {
+    id: "s03_impulse_noise",
+    label: "S03 impulse noise",
+    values: { shapeCount: 3, impulseNoise: 0.06, syntheticContrast: 1, boundaryBlur: 0.5, allowOverlap: false, syntheticSeed: 103 }
+  },
+  {
+    id: "s04_blurred_boundaries",
+    label: "S04 blurred boundaries",
+    values: { shapeCount: 3, boundaryBlur: 2.2, syntheticContrast: 1, allowOverlap: false, syntheticSeed: 104 }
+  },
+  {
+    id: "s05_textured_foreground",
+    label: "S05 textured foreground",
+    values: { shapeCount: 3, foregroundTexture: 0.35, syntheticContrast: 1, boundaryBlur: 0.6, allowOverlap: false, syntheticSeed: 105 }
+  },
+  {
+    id: "s06_textured_background",
+    label: "S06 textured background",
+    values: { shapeCount: 3, backgroundTexture: 0.35, syntheticContrast: 1, boundaryBlur: 0.6, allowOverlap: false, syntheticSeed: 106 }
+  },
+  {
+    id: "s07_overlapping_objects",
+    label: "S07 overlapping objects",
+    values: { shapeCount: 5, syntheticContrast: 1, boundaryBlur: 0.6, allowOverlap: true, syntheticSeed: 107 }
+  },
+  {
+    id: "s08_low_contrast",
+    label: "S08 low contrast",
+    values: { shapeCount: 3, syntheticContrast: 0.42, boundaryBlur: 0.6, illuminationGradient: 0.08, allowOverlap: false, syntheticSeed: 108 }
+  }
+];
+
 const artifactOrder = [
   ["original_image", "Original"],
   ["representation", "Representation"],
@@ -163,6 +211,17 @@ function App() {
   const [entropyMeasure, setEntropyMeasure] = useState("shannon");
   const [entropyScope, setEntropyScope] = useState("local");
   const [segmentationMethod, setSegmentationMethod] = useState("feature_kmeans");
+  const [syntheticPreset, setSyntheticPreset] = useState("s01_clean_high_contrast");
+  const [shapeCount, setShapeCount] = useState(3);
+  const [foregroundTexture, setForegroundTexture] = useState(0);
+  const [backgroundTexture, setBackgroundTexture] = useState(0);
+  const [gaussianNoise, setGaussianNoise] = useState(0);
+  const [impulseNoise, setImpulseNoise] = useState(0);
+  const [boundaryBlur, setBoundaryBlur] = useState(0.5);
+  const [illuminationGradient, setIlluminationGradient] = useState(0.05);
+  const [allowOverlap, setAllowOverlap] = useState(false);
+  const [syntheticContrast, setSyntheticContrast] = useState(1.15);
+  const [syntheticSeed, setSyntheticSeed] = useState(101);
   const [height, setHeight] = useState(256);
   const [width, setWidth] = useState(256);
   const [bins, setBins] = useState(64);
@@ -226,7 +285,8 @@ function App() {
         sample_index: String(index),
         representation,
         height: String(height),
-        width: String(width)
+        width: String(width),
+        ...syntheticQuery()
       });
       const payload = await apiFetch<PreviewPayload>(`/api/datasets/preview?${params.toString()}`);
       setPreview(payload);
@@ -259,7 +319,8 @@ function App() {
           height,
           width,
           bins,
-          windowRadius
+          windowRadius,
+          synthetic: syntheticPayload()
         })
       });
       setRunResult(payload);
@@ -307,9 +368,49 @@ function App() {
         height,
         width,
         bins,
-        windowRadius
+        windowRadius,
+        synthetic: syntheticPayload()
       })
     });
+  }
+
+  function syntheticPayload() {
+    return {
+      syntheticPreset,
+      shapeCount,
+      foregroundTexture,
+      backgroundTexture,
+      gaussianNoise,
+      impulseNoise,
+      boundaryBlur,
+      illuminationGradient,
+      allowOverlap,
+      syntheticContrast,
+      syntheticSeed
+    };
+  }
+
+  function syntheticQuery() {
+    return Object.fromEntries(
+      Object.entries(syntheticPayload()).map(([key, value]) => [key, String(value)])
+    );
+  }
+
+  function applySyntheticPreset(presetId: string) {
+    setSyntheticPreset(presetId);
+    const preset = syntheticPresets.find((item) => item.id === presetId);
+    if (!preset) return;
+    const values = preset.values as Partial<ReturnType<typeof syntheticPayload>>;
+    if (values.shapeCount != null) setShapeCount(values.shapeCount);
+    setForegroundTexture(values.foregroundTexture ?? 0);
+    setBackgroundTexture(values.backgroundTexture ?? 0);
+    setGaussianNoise(values.gaussianNoise ?? 0);
+    setImpulseNoise(values.impulseNoise ?? 0);
+    if (values.boundaryBlur != null) setBoundaryBlur(values.boundaryBlur);
+    setIlluminationGradient(values.illuminationGradient ?? 0);
+    if (values.allowOverlap != null) setAllowOverlap(values.allowOverlap);
+    if (values.syntheticContrast != null) setSyntheticContrast(values.syntheticContrast);
+    if (values.syntheticSeed != null) setSyntheticSeed(values.syntheticSeed);
   }
 
   const canUseDataset = dataset !== "oxford_iiit_pet";
@@ -397,6 +498,74 @@ function App() {
               onChange={(event) => setSampleIndex(Number(event.target.value))}
             />
           </label>
+
+          {dataset === "synthetic_shapes" && (
+            <div className="synthetic-controls">
+              <label>
+                Benchmark preset
+                <select value={syntheticPreset} onChange={(event) => applySyntheticPreset(event.target.value)}>
+                  {syntheticPresets.map((preset) => (
+                    <option value={preset.id} key={preset.id}>{preset.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="two-column">
+                <label>
+                  Shapes
+                  <input type="number" value={shapeCount} min={1} max={8} onChange={(event) => setShapeCount(Number(event.target.value))} />
+                </label>
+                <label>
+                  Contrast
+                  <input type="number" value={syntheticContrast} min={0.1} max={1.5} step={0.05} onChange={(event) => setSyntheticContrast(Number(event.target.value))} />
+                </label>
+              </div>
+
+              <div className="two-column">
+                <label>
+                  Foreground texture
+                  <input type="number" value={foregroundTexture} min={0} max={1} step={0.05} onChange={(event) => setForegroundTexture(Number(event.target.value))} />
+                </label>
+                <label>
+                  Background texture
+                  <input type="number" value={backgroundTexture} min={0} max={1} step={0.05} onChange={(event) => setBackgroundTexture(Number(event.target.value))} />
+                </label>
+              </div>
+
+              <div className="two-column">
+                <label>
+                  Gaussian noise
+                  <input type="number" value={gaussianNoise} min={0} max={0.3} step={0.01} onChange={(event) => setGaussianNoise(Number(event.target.value))} />
+                </label>
+                <label>
+                  Impulse noise
+                  <input type="number" value={impulseNoise} min={0} max={0.3} step={0.01} onChange={(event) => setImpulseNoise(Number(event.target.value))} />
+                </label>
+              </div>
+
+              <div className="two-column">
+                <label>
+                  Boundary blur
+                  <input type="number" value={boundaryBlur} min={0} max={4} step={0.1} onChange={(event) => setBoundaryBlur(Number(event.target.value))} />
+                </label>
+                <label>
+                  Illumination
+                  <input type="number" value={illuminationGradient} min={0} max={1} step={0.05} onChange={(event) => setIlluminationGradient(Number(event.target.value))} />
+                </label>
+              </div>
+
+              <div className="two-column">
+                <label>
+                  Seed
+                  <input type="number" value={syntheticSeed} min={0} max={9999} onChange={(event) => setSyntheticSeed(Number(event.target.value))} />
+                </label>
+                <label className="checkbox-label">
+                  <input type="checkbox" checked={allowOverlap} onChange={(event) => setAllowOverlap(event.target.checked)} />
+                  <span>Overlap</span>
+                </label>
+              </div>
+            </div>
+          )}
 
           <label>
             Representation
@@ -678,6 +847,10 @@ function App() {
                 <dd>{segmentationMethod === "feature_kmeans" ? "feature KMeans" : segmentationMethod}</dd>
               </div>
               <div>
+                <dt>Preset</dt>
+                <dd>{dataset === "synthetic_shapes" ? syntheticPreset.replace(/_/g, " ") : "none"}</dd>
+              </div>
+              <div>
                 <dt>Feature stack</dt>
                 <dd>{segmentationMethod === "feature_kmeans" ? "I + entropy + gradient" : "entropy map"}</dd>
               </div>
@@ -896,6 +1069,13 @@ function App() {
             </div>
             <pre>{`dataset: ${dataset}
 representation: ${representation}
+synthetic:
+  preset: ${dataset === "synthetic_shapes" ? syntheticPreset : "none"}
+  shapes: ${shapeCount}
+  gaussian_noise: ${gaussianNoise}
+  impulse_noise: ${impulseNoise}
+  boundary_blur: ${boundaryBlur}
+  contrast: ${syntheticContrast}
 entropy:
   name: ${entropyMeasure}
   scope: ${entropyScope}

@@ -16,7 +16,11 @@ from skimage.io import imsave
 
 from visionentropy.datasets.base import ImageSample
 from visionentropy.datasets.skimage_examples import SkimageExamplesDataset
-from visionentropy.datasets.synthetic_shapes import SyntheticShapesConfig, SyntheticShapesDataset
+from visionentropy.datasets.synthetic_shapes import (
+    SyntheticShapesConfig,
+    SyntheticShapesDataset,
+    synthetic_config_from_preset,
+)
 from visionentropy.entropy import LocalEntropyMap
 from visionentropy.evaluation import binary_metrics
 from visionentropy.pipeline.base import PipelineResult
@@ -146,19 +150,43 @@ def _load_sample(dataset_config: dict[str, Any]) -> ImageSample:
 
     if name == "synthetic_shapes":
         image_size = tuple(dataset_config.get("image_size", (256, 256)))
-        dataset = SyntheticShapesDataset(
-            SyntheticShapesConfig(
-                image_size=(int(image_size[0]), int(image_size[1])),
-                sample_count=int(dataset_config.get("sample_count", 16)),
+        config_kwargs = {
+            "image_size": (int(image_size[0]), int(image_size[1])),
+            "sample_count": int(dataset_config.get("sample_count", 16)),
+        }
+        preset = dataset_config.get("preset")
+        if preset and preset != "custom":
+            config = synthetic_config_from_preset(str(preset), **config_kwargs)
+        else:
+            config = SyntheticShapesConfig(
+                **config_kwargs,
+                shape_count=_optional_int(dataset_config.get("shape_count")),
+                min_shapes=int(dataset_config.get("min_shapes", 2)),
+                max_shapes=int(dataset_config.get("max_shapes", 5)),
+                foreground_texture=float(dataset_config.get("foreground_texture", 0.0)),
+                background_texture=float(dataset_config.get("background_texture", 0.0)),
+                gaussian_noise=float(dataset_config.get("gaussian_noise", 0.0)),
+                impulse_noise=float(dataset_config.get("impulse_noise", 0.0)),
+                boundary_blur=float(dataset_config.get("boundary_blur", 0.7)),
+                illumination_gradient=float(dataset_config.get("illumination_gradient", 0.0)),
+                allow_overlap=bool(dataset_config.get("allow_overlap", False)),
+                contrast=float(dataset_config.get("contrast", 1.0)),
+                preset=str(preset) if preset else None,
                 seed=int(dataset_config.get("seed", 42)),
             )
-        )
+        dataset = SyntheticShapesDataset(config)
         return dataset[sample_index]
 
     if name == "skimage_examples":
         return SkimageExamplesDataset()[sample_index]
 
     raise ValueError(f"Vertical slice currently supports synthetic_shapes and skimage_examples, not {name}.")
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in {None, ""}:
+        return None
+    return int(value)
 
 
 def _preprocess_sample(

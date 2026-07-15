@@ -184,6 +184,34 @@ input {
   gap: 10px;
 }
 
+.synthetic-controls {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #d8e0e3;
+  border-radius: 8px;
+  background: #f8fbfb;
+}
+
+.checkbox-label {
+  align-content: end;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  min-height: 61px;
+}
+
+.checkbox-label input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+}
+
+.checkbox-label span {
+  color: #182026;
+  font-size: 13px;
+  font-weight: 750;
+}
+
 .primary-action {
   display: flex;
   align-items: center;
