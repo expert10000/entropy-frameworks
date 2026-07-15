@@ -69,6 +69,28 @@ type RunPayload = {
   artifacts?: Record<string, string>;
 };
 
+type ComparisonVariant = {
+  id: string;
+  title: string;
+  kind: "baseline" | "entropy";
+  description: string;
+  threshold: number | null;
+  metrics: Record<string, number>;
+  artifacts: Record<string, string | null>;
+};
+
+type ComparisonPayload = {
+  ready?: boolean;
+  sampleId?: string;
+  experiment?: string;
+  outputDirectory?: string;
+  runtime?: Record<string, number>;
+  parameters?: Record<string, number>;
+  artifacts?: Record<string, string | null>;
+  variants?: ComparisonVariant[];
+  bestVariantId?: string | null;
+};
+
 type ApiState = "checking" | "online" | "offline";
 type ResultMode = "single" | "compare" | "overlay";
 
@@ -128,8 +150,10 @@ function App() {
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
   const [runResult, setRunResult] = useState<RunPayload | null>(null);
   const [runHistory, setRunHistory] = useState<RunPayload[]>([]);
+  const [comparisonResult, setComparisonResult] = useState<ComparisonPayload | null>(null);
   const [statusText, setStatusText] = useState("Starting up");
   const [isRunning, setIsRunning] = useState(false);
+  const [isComparing, setIsComparing] = useState(false);
   const [selectedArtifact, setSelectedArtifact] = useState("entropy_map");
   const [resultMode, setResultMode] = useState<ResultMode>("compare");
 
@@ -156,10 +180,14 @@ function App() {
       await apiFetch("/api/health");
       const datasetPayload = await apiFetch<{ datasets: DatasetStatus[] }>("/api/datasets");
       const latest = await apiFetch<RunPayload & { ready?: boolean }>("/api/results/latest");
+      const latestComparison = await apiFetch<ComparisonPayload>("/api/comparisons/latest");
       const history = await apiFetch<{ runs: RunPayload[] }>("/api/runs");
       setDatasets(datasetPayload.datasets);
       if (latest.ready !== false) {
         setRunResult(latest);
+      }
+      if (latestComparison.ready !== false) {
+        setComparisonResult(latestComparison);
       }
       setRunHistory(history.runs);
       setApiState("online");
@@ -217,7 +245,17 @@ function App() {
       setRunResult(payload);
       const history = await apiFetch<{ runs: RunPayload[] }>("/api/runs");
       setRunHistory(history.runs);
-      setStatusText(`Run complete: ${payload.experiment}`);
+      setStatusText("Running baseline comparison");
+      setIsComparing(true);
+      try {
+        const comparison = await requestComparison();
+        setComparisonResult(comparison);
+        setStatusText(`Run complete: ${payload.experiment}`);
+      } catch (error) {
+        setStatusText(error instanceof Error ? error.message : "Comparison failed");
+      } finally {
+        setIsComparing(false);
+      }
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : "Run failed");
     } finally {
@@ -225,9 +263,40 @@ function App() {
     }
   }
 
+  async function runComparison() {
+    setIsComparing(true);
+    setStatusText("Running baseline comparison");
+    try {
+      const payload = await requestComparison();
+      setComparisonResult(payload);
+      setStatusText(`Comparison complete: ${payload.experiment}`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : "Comparison failed");
+    } finally {
+      setIsComparing(false);
+    }
+  }
+
+  async function requestComparison() {
+    return apiFetch<ComparisonPayload>("/api/comparisons", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset,
+        sampleIndex,
+        height,
+        width,
+        bins,
+        windowRadius
+      })
+    });
+  }
+
   const canUseDataset = dataset !== "oxford_iiit_pet";
   const sampleLimit = dataset === "skimage_examples" ? 5 : 16;
   const resultArtifacts = runResult?.artifacts ?? {};
+  const comparisonVariants = comparisonResult?.variants ?? [];
+  const bestComparison = comparisonVariants.find((variant) => variant.id === comparisonResult?.bestVariantId);
   const selectedArtifactTitle =
     artifactOrder.find(([key]) => key === selectedArtifact)?.[1] ?? "Artifact";
   const runIdPreview = buildRunIdPreview({
@@ -383,9 +452,22 @@ function App() {
             <span>Load Sample</span>
           </button>
 
-          <button className="primary-action" onClick={runPipeline} disabled={!canUseDataset || isRunning || apiState !== "online"}>
+          <button
+            className="primary-action"
+            onClick={runPipeline}
+            disabled={!canUseDataset || isRunning || isComparing || apiState !== "online"}
+          >
             <Play size={18} />
             <span>{isRunning ? "Running" : "Run Slice"}</span>
+          </button>
+
+          <button
+            className="secondary-action"
+            onClick={runComparison}
+            disabled={!canUseDataset || isRunning || isComparing || apiState !== "online"}
+          >
+            <BarChart3 size={18} />
+            <span>{isComparing ? "Comparing" : "Run Comparison"}</span>
           </button>
 
           <div className="run-id-preview">
@@ -635,6 +717,43 @@ function App() {
           </div>
         </section>
 
+        <section className="surface baseline-comparison">
+          <div className="surface-heading split">
+            <div className="surface-title">
+              <BarChart3 size={18} />
+              <h3>Baseline Comparison</h3>
+            </div>
+            <div className="comparison-actions">
+              {bestComparison && <span className="status-pill ready">Best: {bestComparison.title.replace(/^Experiment |^Baseline /, "")}</span>}
+              <button
+                className="secondary-action compact"
+                onClick={runComparison}
+                disabled={!canUseDataset || isRunning || isComparing || apiState !== "online"}
+              >
+                <Play size={16} />
+                <span>{isComparing ? "Comparing" : "Run"}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="comparison-grid">
+            {comparisonVariants.length > 0 ? (
+              comparisonVariants.map((variant) => (
+                <ComparisonVariantCard
+                  key={variant.id}
+                  variant={variant}
+                  isBest={variant.id === comparisonResult?.bestVariantId}
+                />
+              ))
+            ) : (
+              <div className="empty-comparison">
+                <BarChart3 size={22} />
+                <span>No comparison run yet</span>
+              </div>
+            )}
+          </div>
+        </section>
+
         <section className="content-grid">
           <article className="surface large">
             <div className="surface-heading split">
@@ -810,6 +929,40 @@ function ResultArtifactViewer({
       <ImagePanel title="Original" src={original} />
       <ImagePanel title={selectedTitle} src={selected} />
     </div>
+  );
+}
+
+function ComparisonVariantCard({ variant, isBest }: { variant: ComparisonVariant; isBest: boolean }) {
+  return (
+    <article className={isBest ? "comparison-card best" : "comparison-card"}>
+      <div className="comparison-card-heading">
+        <div>
+          <strong>{variant.title}</strong>
+          <span>{variant.kind}</span>
+        </div>
+        {isBest && <span className="status-pill ready">Best</span>}
+      </div>
+      <p>{variant.description}</p>
+      <dl>
+        <div>
+          <dt>IoU</dt>
+          <dd>{formatMetric(variant.metrics.mean_iou)}</dd>
+        </div>
+        <div>
+          <dt>Dice</dt>
+          <dd>{formatMetric(variant.metrics.dice)}</dd>
+        </div>
+        <div>
+          <dt>Accuracy</dt>
+          <dd>{formatMetric(variant.metrics.pixel_accuracy)}</dd>
+        </div>
+      </dl>
+      <div className="comparison-images">
+        <ImagePanel title="Score" src={variant.artifacts.score_map} />
+        <ImagePanel title="Prediction" src={variant.artifacts.prediction} />
+        <ImagePanel title="Error" src={variant.artifacts.error_map} />
+      </div>
+    </article>
   );
 }
 

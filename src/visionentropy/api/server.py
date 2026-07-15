@@ -12,7 +12,7 @@ import numpy as np
 from skimage.io import imsave
 
 from visionentropy.datasets.registry import dataset_status, load_dataset_specs
-from visionentropy.pipeline import run_vertical_slice
+from visionentropy.pipeline import run_baseline_entropy_comparison, run_vertical_slice
 from visionentropy.pipeline.vertical_slice import _load_sample, _preprocess_sample, _to_uint8_rgb, _to_viewable_image
 from visionentropy.representations import build_representation
 
@@ -52,6 +52,9 @@ class VisionEntropyApiHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/runs":
                 self._send_json(run_history_payload())
                 return
+            if parsed.path == "/api/comparisons/latest":
+                self._send_json(latest_comparison_payload())
+                return
             if parsed.path == "/api/results/latest":
                 query = parse_query(parsed.query)
                 self._send_json(latest_result_payload(query.get("output")))
@@ -74,6 +77,11 @@ class VisionEntropyApiHandler(BaseHTTPRequestHandler):
                 payload = self._read_json()
                 result = run_vertical_slice(build_run_config(payload))
                 self._send_json(run_result_payload(result))
+                return
+            if parsed.path == "/api/comparisons":
+                payload = self._read_json()
+                result = run_baseline_entropy_comparison(build_comparison_config(payload))
+                self._send_json(comparison_result_payload(result))
                 return
             self._send_json({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
         except Exception as error:  # noqa: BLE001
@@ -328,6 +336,58 @@ def build_run_config(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_comparison_config(payload: dict[str, Any]) -> dict[str, Any]:
+    dataset_name = payload.get("dataset", "synthetic_shapes")
+    sample_index = int(payload.get("sampleIndex", 0))
+    height = int(payload.get("height", 256))
+    width = int(payload.get("width", 256))
+    bins = int(payload.get("bins", 64))
+    window_radius = int(payload.get("windowRadius", 4))
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    output_name = payload.get("outputName") or "_".join(
+        [
+            "comparison",
+            slugify(dataset_name.replace("_shapes", "").replace("_examples", "")),
+            f"{sample_index:03d}",
+            "baseline_vs_entropy",
+            f"r{window_radius}",
+            f"b{bins}",
+            timestamp,
+        ]
+    )
+    return {
+        "experiment": {
+            "name": output_name,
+            "output_directory": str(Path("outputs/runs") / output_name),
+        },
+        "dataset": {
+            "name": dataset_name,
+            "sample_index": sample_index,
+            "image_size": [height, width],
+            "sample_count": max(sample_index + 1, 16),
+        },
+        "preprocessing": {
+            "resize": {"height": height, "width": width},
+            "normalization": {"mode": "zero_one"},
+        },
+        "entropy": {
+            "name": "shannon",
+            "scope": "local",
+            "parameters": {"bins": bins, "window_radius": window_radius},
+        },
+        "comparison": {
+            "name": "baseline_vs_entropy",
+            "variants": [
+                "baseline_a_grayscale_otsu",
+                "baseline_b_grayscale_adaptive",
+                "experiment_c_local_shannon",
+                "experiment_d_grayscale_local_shannon",
+                "experiment_e_grayscale_gradient_local_shannon",
+            ],
+        },
+    }
+
+
 def build_run_slug(
     *,
     dataset_name: str,
@@ -377,12 +437,35 @@ def run_result_payload(result: Any) -> dict[str, Any]:
     }
 
 
+def comparison_result_payload(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **result,
+        "artifacts": artifact_urls(result.get("artifacts", {})),
+        "variants": [
+            {
+                **variant,
+                "artifacts": artifact_urls(variant.get("artifacts", {})),
+            }
+            for variant in result.get("variants", [])
+        ],
+    }
+
+
 def latest_result_payload(output: str | None = None) -> dict[str, Any]:
     root = resolve_local_path(output) if output else latest_run_directory()
     if root is None:
         return {"ready": False}
     payload = run_directory_payload(root)
     return {"ready": True, **payload}
+
+
+def latest_comparison_payload() -> dict[str, Any]:
+    root = latest_comparison_directory()
+    if root is None:
+        return {"ready": False}
+    comparison_path = root / "comparison.json"
+    payload = json.loads(comparison_path.read_text(encoding="utf-8"))
+    return {"ready": True, **comparison_result_payload(payload)}
 
 
 def run_history_payload() -> dict[str, Any]:
@@ -412,6 +495,20 @@ def latest_run_directory() -> Path | None:
     return max(candidates, key=lambda path: (path / "metrics.json").stat().st_mtime)
 
 
+def latest_comparison_directory() -> Path | None:
+    runs_root = Path("outputs/runs")
+    if not runs_root.exists():
+        return None
+    candidates = [
+        directory
+        for directory in runs_root.iterdir()
+        if directory.is_dir() and (directory / "comparison.json").exists()
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (path / "comparison.json").stat().st_mtime)
+
+
 def run_directory_payload(root: Path) -> dict[str, Any]:
     root = resolve_local_path(str(root))
     metrics_path = root / "metrics.json"
@@ -438,8 +535,8 @@ def run_directory_payload(root: Path) -> dict[str, Any]:
     }
 
 
-def artifact_urls(artifacts: dict[str, str]) -> dict[str, str]:
-    return {key: file_url(Path(path)) for key, path in artifacts.items()}
+def artifact_urls(artifacts: dict[str, str | None]) -> dict[str, str | None]:
+    return {key: file_url(Path(path)) if path is not None else None for key, path in artifacts.items()}
 
 
 def file_url(path: Path | None) -> str | None:

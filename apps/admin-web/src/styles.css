@@ -31,6 +31,7 @@ button {
 .app-shell {
   display: grid;
   grid-template-columns: 320px 1fr;
+  overflow-x: hidden;
   min-height: 100vh;
 }
 
@@ -38,6 +39,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 22px;
+  min-width: 0;
+  width: 320px;
   min-height: 100vh;
   padding: 22px;
   background: #fbfcfc;
@@ -124,6 +127,8 @@ dt {
 .control-panel {
   display: grid;
   gap: 15px;
+  min-width: 0;
+  overflow: hidden;
   padding: 16px;
 }
 
@@ -184,6 +189,8 @@ input {
   align-items: center;
   justify-content: center;
   gap: 9px;
+  width: 100%;
+  min-width: 0;
   min-height: 42px;
   color: #ffffff;
   border: 0;
@@ -197,6 +204,8 @@ input {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
   min-height: 38px;
   padding: 0 12px;
   color: #155e6e;
@@ -206,7 +215,16 @@ input {
   font-weight: 750;
 }
 
+.secondary-action span,
+.primary-action span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .secondary-action.compact {
+  width: auto;
   min-width: 132px;
 }
 
@@ -231,16 +249,21 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 9px;
+  min-width: 0;
   min-height: 34px;
-  padding: 0 10px;
+  padding: 7px 10px;
   border: 1px solid #d8e0e3;
   border-radius: 8px;
   background: #f8fbfb;
 }
 
 .api-status strong {
+  min-width: 0;
+  overflow: hidden;
   color: #243239;
   font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .run-id-preview {
@@ -391,6 +414,18 @@ button:disabled {
   min-height: auto;
 }
 
+.baseline-comparison {
+  min-height: auto;
+}
+
+.comparison-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
 .run-history-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(180px, 1fr));
@@ -444,6 +479,116 @@ button:disabled {
   margin: 0;
   color: #182026;
   font-size: 12px;
+  font-weight: 800;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.comparison-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d8e0e3;
+  border-radius: 8px;
+  background: #f8fbfb;
+}
+
+.comparison-card.best {
+  border-color: #1f7a8c;
+  background: #eaf4f6;
+}
+
+.comparison-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.comparison-card-heading div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.comparison-card strong {
+  color: #182026;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.comparison-card-heading span,
+.comparison-card p {
+  color: #617178;
+  font-size: 12px;
+}
+
+.comparison-card p {
+  min-height: 42px;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.comparison-card dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.comparison-card dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.comparison-card dd {
+  margin: 0;
+  color: #182026;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.comparison-images {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.comparison-images .image-panel,
+.comparison-images .image-panel img,
+.comparison-images .empty-image {
+  min-height: 88px;
+}
+
+.comparison-images .image-panel figcaption {
+  left: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  overflow: hidden;
+  padding: 3px 6px;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-comparison {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  grid-column: 1 / -1;
+  min-height: 120px;
+  color: #617178;
+  border: 1px dashed #cbd7db;
+  border-radius: 8px;
+  background: #f8fbfb;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -972,6 +1117,7 @@ pre {
   .status-strip,
   .metrics-grid,
   .dataset-grid,
+  .comparison-grid,
   .run-history-grid,
   .live-viewer-grid,
   .viewer-grid,
@@ -991,6 +1137,11 @@ pre {
 
   .viewer-card {
     grid-template-columns: 1fr;
+  }
+
+  .comparison-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
