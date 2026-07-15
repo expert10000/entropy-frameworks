@@ -56,6 +56,14 @@ def test_build_run_config_uses_ui_parameters() -> None:
     assert "synthetic_002_shannon_local_kapur_r3_b32" in config["experiment"]["name"]
 
 
+def test_build_run_config_defaults_to_feature_kmeans() -> None:
+    config = build_run_config({"dataset": "synthetic_shapes", "sampleIndex": 0})
+
+    assert config["segmentation"]["name"] == "feature_kmeans"
+    assert config["segmentation"]["parameters"]["foreground"] == "mask_overlap"
+    assert "synthetic_000_shannon_local_feature_kmeans_r4_b64" in config["experiment"]["name"]
+
+
 def test_build_comparison_config_uses_ui_parameters() -> None:
     config = build_comparison_config(
         {

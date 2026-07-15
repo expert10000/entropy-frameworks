@@ -12,6 +12,7 @@ from skimage.io import imsave
 from visionentropy.entropy import LocalEntropyMap
 from visionentropy.evaluation import binary_metrics
 from visionentropy.pipeline.vertical_slice import (
+    _boundary_region_features,
     _error_map,
     _heatmap,
     _load_sample,
@@ -21,7 +22,7 @@ from visionentropy.pipeline.vertical_slice import (
     _zero_one,
 )
 from visionentropy.representations import build_representation
-from visionentropy.segmentation import MaximumEntropySegmenter, maximum_entropy_threshold
+from visionentropy.segmentation import FeatureKMeansSegmenter, MaximumEntropySegmenter, maximum_entropy_threshold
 
 
 def run_baseline_entropy_comparison(config: dict[str, Any]) -> dict[str, Any]:
@@ -45,6 +46,15 @@ def run_baseline_entropy_comparison(config: dict[str, Any]) -> dict[str, Any]:
     entropy_map = LocalEntropyMap(window_radius=window_radius, bins=bins).compute(gray).map
     entropy_score = _zero_one(entropy_map)
     gradient_score = _zero_one(filters.sobel(gray))
+    feature_stack = _boundary_region_features(
+        grayscale=gray,
+        entropy_map=entropy_map,
+        gradient_map=gradient_score,
+    )
+    feature_kmeans = FeatureKMeansSegmenter(foreground="mask_overlap", random_state=0).segment(
+        feature_stack,
+        target=target,
+    )
 
     shared_artifacts = _save_shared_artifacts(
         images_directory=images_directory,
@@ -102,12 +112,12 @@ def run_baseline_entropy_comparison(config: dict[str, Any]) -> dict[str, Any]:
         ),
         _variant(
             variant_id="experiment_e_grayscale_gradient_local_shannon",
-            title="Experiment E: grayscale + gradient + local Shannon",
+            title="Experiment E: feature stack + KMeans",
             kind="entropy",
-            description="Intensity, edge strength, and entropy fused before thresholding.",
-            score=_mean_score(gray, gradient_score, entropy_score),
-            prediction=_threshold_otsu(_mean_score(gray, gradient_score, entropy_score)),
-            threshold=_safe_otsu(_mean_score(gray, gradient_score, entropy_score)),
+            description="Intensity, boundary entropy, and gradient clustered into regions.",
+            score=np.mean(feature_stack, axis=-1),
+            prediction=feature_kmeans.prediction,
+            threshold=None,
             images_directory=images_directory,
             target=target,
         ),

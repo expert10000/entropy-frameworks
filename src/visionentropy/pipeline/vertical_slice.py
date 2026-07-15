@@ -11,6 +11,7 @@ from typing import Any
 import matplotlib
 import numpy as np
 import yaml
+from skimage import filters
 from skimage.io import imsave
 
 from visionentropy.datasets.base import ImageSample
@@ -21,7 +22,7 @@ from visionentropy.evaluation import binary_metrics
 from visionentropy.pipeline.base import PipelineResult
 from visionentropy.preprocessing import ComposeTransforms, NormalizeImage, ResizeSample
 from visionentropy.representations import build_representation
-from visionentropy.segmentation import MaximumEntropySegmenter, maximum_entropy_threshold
+from visionentropy.segmentation import FeatureKMeansSegmenter, MaximumEntropySegmenter, maximum_entropy_threshold
 
 matplotlib.use("Agg")
 from matplotlib import colormaps  # noqa: E402
@@ -58,10 +59,38 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
     segmentation_name = config.get("segmentation", {}).get("name", "maximum_entropy_threshold")
     segmenter_config = config.get("segmentation", {}).get("parameters", {})
     threshold_bins = int(segmenter_config.get("bins", bins))
-    foreground = segmenter_config.get("foreground", "high")
-    segmenter = MaximumEntropySegmenter(bins=threshold_bins, foreground=foreground)
-    segmentation = segmenter.segment(entropy_result.map)
-    threshold = maximum_entropy_threshold(entropy_result.map, bins=threshold_bins)
+    gradient_map = None
+    feature_stack = None
+    cluster_labels = None
+    cluster_centers = None
+    foreground_label = None
+    foreground_rule = None
+
+    if segmentation_name in {"feature_kmeans", "boundary_region_kmeans", "kmeans"}:
+        grayscale = _grayscale(sample.image)
+        feature_entropy_map = LocalEntropyMap(window_radius=window_radius, bins=bins).compute(grayscale).map
+        gradient_map = filters.sobel(grayscale)
+        feature_stack = _boundary_region_features(
+            grayscale=grayscale,
+            entropy_map=feature_entropy_map,
+            gradient_map=gradient_map,
+        )
+        segmenter = FeatureKMeansSegmenter(
+            foreground=segmenter_config.get("foreground", "mask_overlap"),
+            random_state=int(segmenter_config.get("random_state", 0)),
+        )
+        cluster_result = segmenter.segment(feature_stack, target=sample.mask)
+        segmentation = cluster_result.prediction
+        cluster_labels = cluster_result.labels
+        cluster_centers = cluster_result.centers
+        foreground_label = cluster_result.foreground_label
+        foreground_rule = cluster_result.foreground_rule
+        threshold = None
+    else:
+        foreground = segmenter_config.get("foreground", "high")
+        segmenter = MaximumEntropySegmenter(bins=threshold_bins, foreground=foreground)
+        segmentation = segmenter.segment(entropy_result.map)
+        threshold = maximum_entropy_threshold(entropy_result.map, bins=threshold_bins)
 
     metrics = {}
     if sample.mask is not None:
@@ -79,6 +108,9 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         segmentation=segmentation,
         metrics=metrics,
         threshold=threshold,
+        gradient_map=gradient_map,
+        feature_stack=feature_stack,
+        cluster_labels=cluster_labels,
         started=started,
     )
 
@@ -98,6 +130,12 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
             "entropy_scope": entropy_scope,
             "segmentation_method": segmentation_name,
             "threshold": threshold,
+            "feature_channels": ["grayscale", "local_entropy", "gradient_magnitude"]
+            if feature_stack is not None
+            else None,
+            "cluster_centers": cluster_centers.tolist() if cluster_centers is not None else None,
+            "foreground_label": foreground_label,
+            "foreground_rule": foreground_rule,
         },
     )
 
@@ -159,8 +197,11 @@ def _save_artifacts(
     entropy_map: np.ndarray,
     segmentation: np.ndarray,
     metrics: dict[str, float],
-    threshold: float,
+    threshold: float | None,
     started: float,
+    gradient_map: np.ndarray | None = None,
+    feature_stack: np.ndarray | None = None,
+    cluster_labels: np.ndarray | None = None,
 ) -> dict[str, str]:
     config_target = output_directory / "config.yaml"
     if config_path is not None:
@@ -190,6 +231,22 @@ def _save_artifacts(
     np.save(artifacts["prediction_array"], segmentation.astype(np.uint8))
     np.save(artifacts["entropy_array"], entropy_map.astype(np.float32))
 
+    if gradient_map is not None:
+        artifacts["gradient_map"] = str(images_directory / "gradient_map.png")
+        artifacts["gradient_array"] = str(data_directory / "gradient_map.npy")
+        imsave(artifacts["gradient_map"], _heatmap(gradient_map), check_contrast=False)
+        np.save(artifacts["gradient_array"], gradient_map.astype(np.float32))
+
+    if feature_stack is not None:
+        artifacts["feature_stack_array"] = str(data_directory / "feature_stack.npy")
+        np.save(artifacts["feature_stack_array"], feature_stack.astype(np.float32))
+
+    if cluster_labels is not None:
+        artifacts["cluster_labels"] = str(images_directory / "cluster_labels.png")
+        artifacts["cluster_labels_array"] = str(data_directory / "cluster_labels.npy")
+        imsave(artifacts["cluster_labels"], _label_image(cluster_labels), check_contrast=False)
+        np.save(artifacts["cluster_labels_array"], cluster_labels.astype(np.int32))
+
     if sample.mask is not None:
         artifacts["ground_truth"] = str(images_directory / "ground_truth.png")
         artifacts["error_map"] = str(images_directory / "error_map.png")
@@ -197,7 +254,9 @@ def _save_artifacts(
         imsave(artifacts["ground_truth"], (target.astype(np.uint8) * 255), check_contrast=False)
         imsave(artifacts["error_map"], _error_map(segmentation, target), check_contrast=False)
 
-    metrics_payload = {**metrics, "threshold": float(threshold)}
+    metrics_payload = {**metrics}
+    if threshold is not None:
+        metrics_payload["threshold"] = float(threshold)
     Path(artifacts["metrics_json"]).write_text(
         json.dumps(metrics_payload, indent=2, sort_keys=True),
         encoding="utf-8",
@@ -216,6 +275,26 @@ def _save_artifacts(
         encoding="utf-8",
     )
     return artifacts
+
+
+def _grayscale(image: np.ndarray) -> np.ndarray:
+    return _zero_one(build_representation("grayscale").transform(image).data)
+
+
+def _boundary_region_features(
+    *,
+    grayscale: np.ndarray,
+    entropy_map: np.ndarray,
+    gradient_map: np.ndarray,
+) -> np.ndarray:
+    return np.stack(
+        [
+            _zero_one(grayscale),
+            _zero_one(entropy_map),
+            _zero_one(gradient_map),
+        ],
+        axis=-1,
+    ).astype(np.float32)
 
 
 def _to_uint8_rgb(image: np.ndarray) -> np.ndarray:
@@ -246,6 +325,20 @@ def _error_map(prediction: np.ndarray, target: np.ndarray) -> np.ndarray:
     image[np.logical_and(predicted, ~truth)] = (239, 71, 111)
     image[np.logical_and(~predicted, truth)] = (255, 209, 102)
     return image
+
+
+def _label_image(labels: np.ndarray) -> np.ndarray:
+    label_array = np.asarray(labels, dtype=np.int32)
+    palette = np.array(
+        [
+            [31, 122, 140],
+            [255, 209, 102],
+            [239, 71, 111],
+            [45, 156, 124],
+        ],
+        dtype=np.uint8,
+    )
+    return palette[np.mod(label_array, len(palette))]
 
 
 def _zero_one(values: np.ndarray) -> np.ndarray:

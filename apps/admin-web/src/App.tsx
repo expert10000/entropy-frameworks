@@ -64,6 +64,12 @@ type RunPayload = {
   outputDirectory?: string;
   updatedAt?: number;
   threshold?: number;
+  features?: {
+    channels?: string[] | null;
+    foregroundRule?: string | null;
+    foregroundLabel?: number | null;
+    clusterCenters?: number[][] | null;
+  };
   metrics?: Record<string, number>;
   runtime?: Record<string, number>;
   artifacts?: Record<string, string>;
@@ -115,7 +121,19 @@ const representationCatalog = [
     name: "Grayscale",
     shape: "H x W",
     channels: "intensity",
-    use: "Local entropy and thresholding"
+    use: "Region membership feature"
+  },
+  {
+    name: "Local entropy",
+    shape: "H x W",
+    channels: "boundary uncertainty",
+    use: "Boundary and texture feature"
+  },
+  {
+    name: "Gradient",
+    shape: "H x W",
+    channels: "edge magnitude",
+    use: "Boundary strength feature"
   },
   {
     name: "Lab",
@@ -129,6 +147,8 @@ const artifactOrder = [
   ["original_image", "Original"],
   ["representation", "Representation"],
   ["entropy_map", "Entropy map"],
+  ["gradient_map", "Gradient"],
+  ["cluster_labels", "Clusters"],
   ["prediction", "Prediction"],
   ["ground_truth", "Ground truth"],
   ["error_map", "Error map"]
@@ -142,7 +162,7 @@ function App() {
   const [representation, setRepresentation] = useState("grayscale");
   const [entropyMeasure, setEntropyMeasure] = useState("shannon");
   const [entropyScope, setEntropyScope] = useState("local");
-  const [segmentationMethod, setSegmentationMethod] = useState("kapur");
+  const [segmentationMethod, setSegmentationMethod] = useState("feature_kmeans");
   const [height, setHeight] = useState(256);
   const [width, setWidth] = useState(256);
   const [bins, setBins] = useState(64);
@@ -411,10 +431,10 @@ function App() {
           <label>
             Segmentation method
             <select value={segmentationMethod} onChange={(event) => setSegmentationMethod(event.target.value)}>
+              <option value="feature_kmeans">Feature stack KMeans</option>
               <option value="kapur">Kapur maximum entropy</option>
               <option value="otsu" disabled>Otsu threshold pending</option>
               <option value="local_adaptive" disabled>Local adaptive pending</option>
-              <option value="kmeans" disabled>k-means pending</option>
               <option value="entropy_intensity" disabled>Entropy + intensity pending</option>
             </select>
           </label>
@@ -655,7 +675,11 @@ function App() {
               </div>
               <div>
                 <dt>Segmenter</dt>
-                <dd>{segmentationMethod}</dd>
+                <dd>{segmentationMethod === "feature_kmeans" ? "feature KMeans" : segmentationMethod}</dd>
+              </div>
+              <div>
+                <dt>Feature stack</dt>
+                <dd>{segmentationMethod === "feature_kmeans" ? "I + entropy + gradient" : "entropy map"}</dd>
               </div>
             </dl>
           </article>
@@ -858,6 +882,10 @@ function App() {
                 <dt>Output</dt>
                 <dd>{runResult?.experiment ?? "none"}</dd>
               </div>
+              <div>
+                <dt>Foreground rule</dt>
+                <dd>{runResult?.features?.foregroundRule ?? "none"}</dd>
+              </div>
             </dl>
           </article>
 
@@ -875,6 +903,9 @@ entropy:
   window_radius: ${windowRadius}
 segmentation:
   name: ${segmentationMethod}
+  foreground: ${segmentationMethod === "feature_kmeans" ? "mask_overlap_eval" : "high"}
+features:
+  ${segmentationMethod === "feature_kmeans" ? "[grayscale, local_entropy, gradient_magnitude]" : "entropy_map"}
 run_id:
   ${runIdPreview}_<timestamp>`}</pre>
           </article>

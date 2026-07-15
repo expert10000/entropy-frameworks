@@ -293,7 +293,7 @@ def build_run_config(payload: dict[str, Any]) -> dict[str, Any]:
     representation = payload.get("representation", "grayscale")
     entropy_measure = payload.get("entropyMeasure", "shannon")
     entropy_scope = payload.get("entropyScope", "local")
-    segmentation_method = payload.get("segmentationMethod", "kapur")
+    segmentation_method = payload.get("segmentationMethod", "feature_kmeans")
     bins = int(payload.get("bins", 64))
     window_radius = int(payload.get("windowRadius", 4))
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -331,7 +331,14 @@ def build_run_config(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "segmentation": {
             "name": segmentation_method,
-            "parameters": {"bins": bins, "foreground": payload.get("foreground", "high")},
+            "parameters": {
+                "bins": bins,
+                "foreground": payload.get(
+                    "foreground",
+                    "mask_overlap" if segmentation_method in {"feature_kmeans", "kmeans"} else "high",
+                ),
+                "random_state": int(payload.get("randomState", 0)),
+            },
         },
     }
 
@@ -431,6 +438,12 @@ def run_result_payload(result: Any) -> dict[str, Any]:
         },
         "outputDirectory": result.artifacts.get("summary", "").replace("\\", "/").rsplit("/", 1)[0],
         "threshold": result.metadata.get("threshold"),
+        "features": {
+            "channels": result.metadata.get("feature_channels"),
+            "foregroundRule": result.metadata.get("foreground_rule"),
+            "foregroundLabel": result.metadata.get("foreground_label"),
+            "clusterCenters": result.metadata.get("cluster_centers"),
+        },
         "metrics": result.metrics,
         "runtime": result.runtime,
         "artifacts": artifact_urls(result.artifacts),
@@ -519,12 +532,15 @@ def run_directory_payload(root: Path) -> dict[str, Any]:
         "original_image": str(root / "images/original.png"),
         "representation": str(root / "images/representation.png"),
         "entropy_map": str(root / "images/entropy_map.png"),
+        "gradient_map": str(root / "images/gradient_map.png"),
+        "cluster_labels": str(root / "images/cluster_labels.png"),
         "prediction": str(root / "images/prediction.png"),
         "ground_truth": str(root / "images/ground_truth.png"),
         "error_map": str(root / "images/error_map.png"),
         "summary": str(root / "summary.md"),
         "metrics_json": str(metrics_path),
     }
+    artifacts = {key: value for key, value in artifacts.items() if Path(value).exists()}
     return {
         "name": root.name,
         "experiment": root.name,
