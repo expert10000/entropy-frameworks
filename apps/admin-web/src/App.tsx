@@ -63,6 +63,26 @@ type RunPayload = {
   experiment?: string;
   outputDirectory?: string;
   updatedAt?: number;
+  runMetadata?: {
+    run?: string;
+    dataset?: string;
+    sample?: number;
+    sampleId?: string | null;
+    syntheticPreset?: string | null;
+    representation?: string;
+    entropy?: {
+      name?: string;
+      scope?: string;
+      bins?: number;
+      radius?: number;
+    };
+    segmentation?: {
+      name?: string;
+      foreground?: string;
+    };
+    seed?: number;
+    runtimeSeconds?: number | null;
+  };
   threshold?: number;
   features?: {
     channels?: string[] | null;
@@ -194,8 +214,14 @@ const syntheticPresets = [
 const artifactOrder = [
   ["original_image", "Original"],
   ["representation", "Representation"],
+  ["local_mean", "Local mean"],
+  ["local_variance", "Local variance"],
   ["entropy_map", "Entropy map"],
   ["gradient_map", "Gradient"],
+  ["histogram", "Histogram"],
+  ["threshold_curve", "Threshold curve"],
+  ["superpixel_map", "Superpixels"],
+  ["score_map", "Score map"],
   ["cluster_labels", "Clusters"],
   ["prediction", "Prediction"],
   ["ground_truth", "Ground truth"],
@@ -894,8 +920,46 @@ function App() {
                 }}
               >
                 <strong>{run.experiment ?? run.name}</strong>
-                <span>{run.outputDirectory ?? "outputs/runs"}</span>
-                <dl>
+                <span>{formatRunSubtitle(run)}</span>
+                <dl className="run-metadata-list">
+                  <div>
+                    <dt>Dataset</dt>
+                    <dd>{run.runMetadata?.dataset ?? "unknown"}</dd>
+                  </div>
+                  <div>
+                    <dt>Sample</dt>
+                    <dd>{run.runMetadata?.sample ?? run.sampleId ?? "unknown"}</dd>
+                  </div>
+                  <div>
+                    <dt>Representation</dt>
+                    <dd>{run.runMetadata?.representation ?? "unknown"}</dd>
+                  </div>
+                  <div>
+                    <dt>Entropy</dt>
+                    <dd>{formatEntropy(run)}</dd>
+                  </div>
+                  <div>
+                    <dt>Segmentation</dt>
+                    <dd>{formatSegmentation(run)}</dd>
+                  </div>
+                  <div>
+                    <dt>Bins</dt>
+                    <dd>{run.runMetadata?.entropy?.bins ?? "unknown"}</dd>
+                  </div>
+                  <div>
+                    <dt>Radius</dt>
+                    <dd>{run.runMetadata?.entropy?.radius ?? "unknown"}</dd>
+                  </div>
+                  <div>
+                    <dt>Seed</dt>
+                    <dd>{run.runMetadata?.seed ?? "unknown"}</dd>
+                  </div>
+                  <div>
+                    <dt>Runtime</dt>
+                    <dd>{formatRuntime(run.runMetadata?.runtimeSeconds ?? run.runtime?.duration_seconds)}</dd>
+                  </div>
+                </dl>
+                <dl className="run-score-list">
                   <div>
                     <dt>IoU</dt>
                     <dd>{formatMetric(run.metrics?.mean_iou)}</dd>
@@ -1192,6 +1256,33 @@ function apiFileUrl(path: string) {
 
 function formatMetric(value?: number) {
   return value == null ? "0.000" : value.toFixed(3);
+}
+
+function formatRuntime(value?: number | null) {
+  return value == null ? "unknown" : `${value.toFixed(2)} s`;
+}
+
+function formatEntropy(run: RunPayload) {
+  const entropy = run.runMetadata?.entropy;
+  if (!entropy) return "unknown";
+  return `${entropy.scope ?? "local"} ${entropy.name ?? "shannon"}`;
+}
+
+function formatSegmentation(run: RunPayload) {
+  const name = run.runMetadata?.segmentation?.name;
+  if (!name) return "unknown";
+  if (name === "feature_kmeans") return "intensity + entropy k-means";
+  if (name === "kapur" || name === "maximum_entropy_threshold") return "Kapur entropy threshold";
+  return name.replace(/_/g, " ");
+}
+
+function formatRunSubtitle(run: RunPayload) {
+  const metadata = run.runMetadata;
+  if (!metadata) return run.outputDirectory ?? "outputs/runs";
+  const preset = metadata.syntheticPreset && metadata.syntheticPreset !== "custom"
+    ? ` / ${metadata.syntheticPreset.replace(/_/g, " ")}`
+    : "";
+  return `${metadata.dataset ?? "dataset"} / sample ${metadata.sample ?? "?"}${preset}`;
 }
 
 function buildRunIdPreview({

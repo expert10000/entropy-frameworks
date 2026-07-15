@@ -160,6 +160,10 @@ def test_run_result_payload_returns_artifact_urls(tmp_path: Path) -> None:
     payload = run_result_payload(result)
 
     assert payload["sampleId"] == "synthetic_0000"
+    assert payload["runMetadata"]["dataset"] == "synthetic_shapes"
+    assert payload["runMetadata"]["representation"] == "grayscale"
+    assert payload["runMetadata"]["entropy"]["bins"] == 32
+    assert payload["runMetadata"]["entropy"]["radius"] == 2
     assert payload["artifacts"]["entropy_map"].startswith("/api/files")
     assert "dice" in payload["metrics"]
 

@@ -456,7 +456,7 @@ button:disabled {
 
 .run-history-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
   gap: 10px;
 }
 
@@ -497,10 +497,33 @@ button:disabled {
   margin: 0;
 }
 
+.run-metadata-list {
+  padding-top: 2px;
+}
+
+.run-score-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding-top: 8px;
+  border-top: 1px solid #dfe8eb;
+}
+
 .run-card dl div {
   display: flex;
   justify-content: space-between;
   gap: 8px;
+}
+
+.run-score-list div {
+  display: grid;
+  justify-content: start;
+  gap: 2px;
+}
+
+.run-metadata-list dd {
+  max-width: 56%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .run-card dd {

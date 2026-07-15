@@ -11,8 +11,10 @@ from typing import Any
 import matplotlib
 import numpy as np
 import yaml
+from scipy import ndimage
 from skimage import filters
 from skimage.io import imsave
+from skimage.segmentation import slic
 
 from visionentropy.datasets.base import ImageSample
 from visionentropy.datasets.skimage_examples import SkimageExamplesDataset
@@ -24,12 +26,14 @@ from visionentropy.datasets.synthetic_shapes import (
 from visionentropy.entropy import LocalEntropyMap
 from visionentropy.evaluation import binary_metrics
 from visionentropy.pipeline.base import PipelineResult
+from visionentropy.pipeline.metadata import build_run_metadata
 from visionentropy.preprocessing import ComposeTransforms, NormalizeImage, ResizeSample
 from visionentropy.representations import build_representation
 from visionentropy.segmentation import FeatureKMeansSegmenter, MaximumEntropySegmenter, maximum_entropy_threshold
 
 matplotlib.use("Agg")
 from matplotlib import colormaps  # noqa: E402
+from matplotlib import pyplot as plt  # noqa: E402
 
 
 def run_vertical_slice_from_config(config_path: str | Path) -> PipelineResult:
@@ -115,10 +119,16 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         gradient_map=gradient_map,
         feature_stack=feature_stack,
         cluster_labels=cluster_labels,
+        score_map=np.mean(feature_stack, axis=-1) if feature_stack is not None else entropy_result.map,
         started=started,
     )
 
     duration = time.perf_counter() - started
+    run_metadata = build_run_metadata(
+        config,
+        sample_id=sample.sample_id,
+        runtime={"duration_seconds": duration},
+    )
     return PipelineResult(
         sample_id=sample.sample_id,
         representation=representation,
@@ -130,6 +140,7 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         runtime={"duration_seconds": duration},
         metadata={
             "experiment": experiment.get("name", "vertical_slice"),
+            "run_metadata": run_metadata,
             "entropy_measure": entropy_name,
             "entropy_scope": entropy_scope,
             "segmentation_method": segmentation_name,
@@ -230,6 +241,7 @@ def _save_artifacts(
     gradient_map: np.ndarray | None = None,
     feature_stack: np.ndarray | None = None,
     cluster_labels: np.ndarray | None = None,
+    score_map: np.ndarray | None = None,
 ) -> dict[str, str]:
     config_target = output_directory / "config.yaml"
     if config_path is not None:
@@ -242,11 +254,17 @@ def _save_artifacts(
         "original_image": str(images_directory / "original.png"),
         "representation": str(images_directory / "representation.png"),
         "entropy_map": str(images_directory / "entropy_map.png"),
+        "local_mean": str(images_directory / "local_mean.png"),
+        "local_variance": str(images_directory / "local_variance.png"),
+        "histogram": str(images_directory / "histogram.png"),
+        "superpixel_map": str(images_directory / "superpixel_map.png"),
+        "score_map": str(images_directory / "score_map.png"),
         "prediction": str(images_directory / "prediction.png"),
         "metrics_json": str(output_directory / "metrics.json"),
         "metrics_csv": str(output_directory / "metrics.csv"),
         "runtime": str(output_directory / "runtime.json"),
         "environment": str(output_directory / "environment.json"),
+        "run_metadata": str(output_directory / "run_metadata.json"),
         "summary": str(output_directory / "summary.md"),
         "prediction_array": str(data_directory / "prediction.npy"),
         "entropy_array": str(data_directory / "entropy_map.npy"),
@@ -255,6 +273,16 @@ def _save_artifacts(
     imsave(artifacts["original_image"], _to_uint8_rgb(sample.image), check_contrast=False)
     imsave(artifacts["representation"], _to_viewable_image(representation_data), check_contrast=False)
     imsave(artifacts["entropy_map"], _heatmap(entropy_map), check_contrast=False)
+    grayscale = _grayscale(sample.image)
+    local_mean, local_variance = _local_statistics(grayscale, radius=_artifact_radius(config))
+    imsave(artifacts["local_mean"], _to_viewable_image(local_mean), check_contrast=False)
+    imsave(artifacts["local_variance"], _heatmap(local_variance), check_contrast=False)
+    imsave(artifacts["superpixel_map"], _superpixel_map(sample.image), check_contrast=False)
+    imsave(artifacts["score_map"], _heatmap(score_map if score_map is not None else entropy_map), check_contrast=False)
+    _save_histogram(Path(artifacts["histogram"]), representation_data, threshold=threshold)
+    if threshold is not None:
+        artifacts["threshold_curve"] = str(images_directory / "threshold_curve.png")
+        _save_threshold_curve(Path(artifacts["threshold_curve"]), entropy_map, threshold=threshold)
     imsave(artifacts["prediction"], (segmentation.astype(np.uint8) * 255), check_contrast=False)
     np.save(artifacts["prediction_array"], segmentation.astype(np.uint8))
     np.save(artifacts["entropy_array"], entropy_map.astype(np.float32))
@@ -290,8 +318,17 @@ def _save_artifacts(
         encoding="utf-8",
     )
     _write_metrics_csv(Path(artifacts["metrics_csv"]), metrics_payload)
+    runtime_payload = {"duration_seconds": time.perf_counter() - started}
     Path(artifacts["runtime"]).write_text(
-        json.dumps({"duration_seconds": time.perf_counter() - started}, indent=2),
+        json.dumps(runtime_payload, indent=2),
+        encoding="utf-8",
+    )
+    Path(artifacts["run_metadata"]).write_text(
+        json.dumps(
+            build_run_metadata(config, sample_id=sample.sample_id, runtime=runtime_payload),
+            indent=2,
+            sort_keys=True,
+        ),
         encoding="utf-8",
     )
     Path(artifacts["environment"]).write_text(
@@ -303,6 +340,94 @@ def _save_artifacts(
         encoding="utf-8",
     )
     return artifacts
+
+
+def _artifact_radius(config: dict[str, Any]) -> int:
+    entropy_config = config.get("entropy", {}).get("parameters", {})
+    return int(entropy_config.get("window_radius", 4))
+
+
+def _local_statistics(values: np.ndarray, *, radius: int) -> tuple[np.ndarray, np.ndarray]:
+    size = max(3, (radius * 2) + 1)
+    array = np.asarray(values, dtype=np.float32)
+    local_mean = ndimage.uniform_filter(array, size=size, mode="reflect")
+    local_square_mean = ndimage.uniform_filter(array * array, size=size, mode="reflect")
+    local_variance = np.maximum(local_square_mean - (local_mean * local_mean), 0.0)
+    return local_mean.astype(np.float32), local_variance.astype(np.float32)
+
+
+def _save_histogram(path: Path, values: np.ndarray, *, threshold: float | None) -> None:
+    figure, axis = plt.subplots(figsize=(5.2, 3.2), dpi=130)
+    axis.hist(np.asarray(values, dtype=np.float32).ravel(), bins=64, color="#1f7a8c", alpha=0.86)
+    if threshold is not None:
+        axis.axvline(threshold, color="#ef476f", linewidth=2.0, label="threshold")
+        axis.legend(frameon=False, fontsize=8)
+    axis.set_title("Representation histogram")
+    axis.set_xlabel("value")
+    axis.set_ylabel("pixels")
+    axis.grid(True, alpha=0.22)
+    figure.tight_layout()
+    figure.savefig(path)
+    plt.close(figure)
+
+
+def _save_threshold_curve(path: Path, values: np.ndarray, *, threshold: float) -> None:
+    thresholds, scores = _kapur_objective_curve(values)
+    figure, axis = plt.subplots(figsize=(5.2, 3.2), dpi=130)
+    axis.plot(thresholds, scores, color="#1f7a8c", linewidth=2.0)
+    axis.axvline(threshold, color="#ef476f", linewidth=2.0, label="selected")
+    axis.set_title("Kapur objective J(t) = H0(t) + H1(t)")
+    axis.set_xlabel("threshold")
+    axis.set_ylabel("objective")
+    axis.grid(True, alpha=0.22)
+    axis.legend(frameon=False, fontsize=8)
+    figure.tight_layout()
+    figure.savefig(path)
+    plt.close(figure)
+
+
+def _kapur_objective_curve(values: np.ndarray, *, bins: int = 128) -> tuple[np.ndarray, np.ndarray]:
+    array = np.asarray(values, dtype=np.float64)
+    histogram, edges = np.histogram(array.ravel(), bins=bins)
+    probabilities = histogram.astype(np.float64)
+    total = probabilities.sum()
+    if total <= 0:
+        return edges[1:-1], np.zeros(max(0, bins - 2), dtype=np.float64)
+    probabilities /= total
+    cumulative = np.cumsum(probabilities)
+    scores = []
+    thresholds = []
+    for index in range(1, len(probabilities) - 1):
+        weight_background = cumulative[index]
+        weight_foreground = 1.0 - weight_background
+        if weight_background <= 0 or weight_foreground <= 0:
+            score = 0.0
+        else:
+            p_background = probabilities[: index + 1] / weight_background
+            p_foreground = probabilities[index + 1 :] / weight_foreground
+            score = _distribution_entropy(p_background) + _distribution_entropy(p_foreground)
+        scores.append(score)
+        thresholds.append(edges[index + 1])
+    return np.asarray(thresholds), np.asarray(scores)
+
+
+def _distribution_entropy(probabilities: np.ndarray) -> float:
+    positive = probabilities[probabilities > 0]
+    if positive.size == 0:
+        return 0.0
+    return float(-(positive * np.log(positive)).sum())
+
+
+def _superpixel_map(image: np.ndarray) -> np.ndarray:
+    labels = slic(
+        _zero_one(np.asarray(image, dtype=np.float32)),
+        n_segments=96,
+        compactness=12.0,
+        sigma=0.5,
+        start_label=0,
+        channel_axis=-1,
+    )
+    return _label_image(labels)
 
 
 def _grayscale(image: np.ndarray) -> np.ndarray:

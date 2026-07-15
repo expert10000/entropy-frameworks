@@ -76,10 +76,20 @@ def test_vertical_slice_writes_expected_outputs(tmp_path: Path) -> None:
     result = run_vertical_slice(config)
 
     assert result.sample_id == "synthetic_0000"
+    assert result.metadata["run_metadata"]["dataset"] == "synthetic_shapes"
+    assert result.metadata["run_metadata"]["sample"] == 0
+    assert result.metadata["run_metadata"]["representation"] == "grayscale"
     assert result.segmentation.shape == (64, 64)
     assert "dice" in result.metrics
     assert (output_directory / "metrics.json").exists()
+    assert (output_directory / "run_metadata.json").exists()
     assert (output_directory / "images" / "entropy_map.png").exists()
+    assert (output_directory / "images" / "local_mean.png").exists()
+    assert (output_directory / "images" / "local_variance.png").exists()
+    assert (output_directory / "images" / "histogram.png").exists()
+    assert (output_directory / "images" / "threshold_curve.png").exists()
+    assert (output_directory / "images" / "superpixel_map.png").exists()
+    assert (output_directory / "images" / "score_map.png").exists()
     assert (output_directory / "images" / "prediction.png").exists()
 
 
@@ -111,4 +121,9 @@ def test_vertical_slice_feature_kmeans_writes_feature_outputs(tmp_path: Path) ->
     ]
     assert (output_directory / "images" / "gradient_map.png").exists()
     assert (output_directory / "images" / "cluster_labels.png").exists()
+    assert (output_directory / "images" / "local_mean.png").exists()
+    assert (output_directory / "images" / "local_variance.png").exists()
+    assert (output_directory / "images" / "histogram.png").exists()
+    assert (output_directory / "images" / "superpixel_map.png").exists()
+    assert (output_directory / "images" / "score_map.png").exists()
     assert (output_directory / "data" / "feature_stack.npy").exists()

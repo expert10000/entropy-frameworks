@@ -9,11 +9,13 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 import numpy as np
+import yaml
 from skimage.io import imsave
 
 from visionentropy.datasets.registry import dataset_status, load_dataset_specs
 from visionentropy.datasets.synthetic_shapes import SYNTHETIC_BENCHMARK_PRESETS
 from visionentropy.pipeline import run_baseline_entropy_comparison, run_vertical_slice
+from visionentropy.pipeline.metadata import build_run_metadata
 from visionentropy.pipeline.vertical_slice import _load_sample, _preprocess_sample, _to_uint8_rgb, _to_viewable_image
 from visionentropy.representations import build_representation
 
@@ -496,6 +498,7 @@ def run_result_payload(result: Any) -> dict[str, Any]:
             "segmentationMethod": result.metadata.get("segmentation_method"),
         },
         "outputDirectory": result.artifacts.get("summary", "").replace("\\", "/").rsplit("/", 1)[0],
+        "runMetadata": result.metadata.get("run_metadata"),
         "threshold": result.metadata.get("threshold"),
         "features": {
             "channels": result.metadata.get("feature_channels"),
@@ -591,23 +594,48 @@ def run_directory_payload(root: Path) -> dict[str, Any]:
         "original_image": str(root / "images/original.png"),
         "representation": str(root / "images/representation.png"),
         "entropy_map": str(root / "images/entropy_map.png"),
+        "local_mean": str(root / "images/local_mean.png"),
+        "local_variance": str(root / "images/local_variance.png"),
         "gradient_map": str(root / "images/gradient_map.png"),
+        "histogram": str(root / "images/histogram.png"),
+        "threshold_curve": str(root / "images/threshold_curve.png"),
+        "superpixel_map": str(root / "images/superpixel_map.png"),
+        "score_map": str(root / "images/score_map.png"),
         "cluster_labels": str(root / "images/cluster_labels.png"),
         "prediction": str(root / "images/prediction.png"),
         "ground_truth": str(root / "images/ground_truth.png"),
         "error_map": str(root / "images/error_map.png"),
         "summary": str(root / "summary.md"),
         "metrics_json": str(metrics_path),
+        "run_metadata": str(root / "run_metadata.json"),
     }
     artifacts = {key: value for key, value in artifacts.items() if Path(value).exists()}
+    run_metadata = run_metadata_payload(root)
     return {
         "name": root.name,
         "experiment": root.name,
         "outputDirectory": str(root),
         "updatedAt": metrics_path.stat().st_mtime,
+        "runMetadata": run_metadata,
         "metrics": json.loads(metrics_path.read_text(encoding="utf-8")),
         "artifacts": artifact_urls(artifacts),
     }
+
+
+def run_metadata_payload(root: Path) -> dict[str, Any]:
+    metadata_path = root / "run_metadata.json"
+    if metadata_path.exists():
+        return json.loads(metadata_path.read_text(encoding="utf-8"))
+
+    config_path = root / "config.yaml"
+    runtime_path = root / "runtime.json"
+    if not config_path.exists():
+        return {"run": root.name}
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    runtime = {}
+    if runtime_path.exists():
+        runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+    return build_run_metadata(config, runtime=runtime)
 
 
 def artifact_urls(artifacts: dict[str, str | None]) -> dict[str, str | None]:
