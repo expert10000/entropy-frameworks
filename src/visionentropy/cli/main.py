@@ -13,6 +13,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="Run an experiment configuration.")
     run_parser.add_argument("--config", required=True, help="Path to a YAML experiment config.")
 
+    serve_parser = subparsers.add_parser("serve", help="Start the local dashboard API.")
+    serve_parser.add_argument("--host", default="127.0.0.1")
+    serve_parser.add_argument("--port", type=int, default=8765)
+
     dataset_parser = subparsers.add_parser("dataset", help="Inspect configured datasets.")
     dataset_subparsers = dataset_parser.add_subparsers(dest="dataset_command")
 
@@ -47,7 +51,22 @@ def main() -> None:
         return
 
     if args.command == "run":
-        print(f"Experiment runner scaffold ready for: {args.config}")
+        from visionentropy.pipeline import run_vertical_slice_from_config
+
+        result = run_vertical_slice_from_config(args.config)
+        print(f"Run complete: {result.metadata['experiment']}")
+        print(f"Sample: {result.sample_id}")
+        print(f"Output summary: {result.artifacts['summary']}")
+        if result.metrics:
+            print("Metrics:")
+            for key, value in result.metrics.items():
+                print(f"  {key}: {value:.4f}")
+        return
+
+    if args.command == "serve":
+        from visionentropy.api.server import serve
+
+        serve(host=args.host, port=args.port)
         return
 
     if args.command == "dataset":

@@ -5,6 +5,7 @@ experiment:
 
 dataset:
   name: synthetic_shapes
+  sample_index: 0
   image_size:
     - 256
     - 256
@@ -20,19 +21,22 @@ preprocessing:
     name: grayscale
 
 representation:
-  name: pixels
+  name: grayscale
 
 entropy:
   name: shannon
   parameters:
     bins: 64
+    window_radius: 4
     normalized: true
     logarithm_base: 2
 
 segmentation:
   name: maximum_entropy_threshold
   parameters:
+    bins: 64
     classes: 2
+    foreground: high
 
 evaluation:
   metrics:

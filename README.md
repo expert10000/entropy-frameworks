@@ -35,11 +35,28 @@ Large datasets are user-managed under `data/raw` and excluded from Git. See
 
 ### Admin web app
 
+Start the local API in one terminal:
+
+```powershell
+visionentropy serve
+```
+
+Start the React dashboard in another terminal:
+
 ```powershell
 cd apps/admin-web
 npm install
 npm run dev
 ```
+
+### First vertical slice
+
+```powershell
+visionentropy run --config configs/experiments/e01_synthetic_shannon.yaml
+```
+
+The starter run writes metrics, runtime data, NumPy arrays, and PNG artifacts to
+`outputs/runs/e01_synthetic_shannon`.
 
 ## Repository Layout
 

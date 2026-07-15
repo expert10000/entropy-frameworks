@@ -12,6 +12,7 @@ from visionentropy.representations.color_spaces import (
 def build_representation(name: str) -> ImageRepresentation:
     registry: dict[str, ImageRepresentation] = {
         "rgb": RGBRepresentation(),
+        "pixels": RGBRepresentation(name="pixels"),
         "grayscale": GrayscaleRepresentation(),
         "lab": LabRepresentation(),
         "red": ColorChannelRepresentation("red"),

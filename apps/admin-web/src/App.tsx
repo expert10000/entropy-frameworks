@@ -1,40 +1,76 @@
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
   BarChart3,
   Boxes,
   Braces,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
+  Columns2,
   Database,
-  Download,
   FlaskConical,
   GitBranch,
   HardDrive,
   Image,
-  LineChart,
+  Layers,
   Maximize2,
   Network,
   Palette,
   Play,
   RefreshCw,
-  Save,
   Settings2,
   SlidersHorizontal,
+  Table2,
   UploadCloud
 } from "lucide-react";
 
-type Metric = {
-  label: string;
-  value: string;
-  delta: string;
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8765";
+
+type DatasetStatus = {
+  name: string;
+  title: string;
+  mode: string;
+  ready: boolean;
+  root: string | null;
+  missingPaths: string[];
+  message: string;
 };
 
-const metrics: Metric[] = [
-  { label: "Mean IoU", value: "0.81", delta: "+0.06" },
-  { label: "Dice", value: "0.89", delta: "+0.04" },
-  { label: "Pixel accuracy", value: "0.93", delta: "+0.02" },
-  { label: "Entropy-error r", value: "0.42", delta: "+0.11" }
-];
+type PreviewPayload = {
+  sampleId: string;
+  dataset: string;
+  label: string | number | null;
+  metadata: Record<string, unknown>;
+  imageShape: number[];
+  maskShape: number[] | null;
+  representation: {
+    name: string;
+    shape: number[];
+    channels: string[];
+  };
+  images: {
+    original: string;
+    representation: string;
+    mask: string | null;
+  };
+};
+
+type RunPayload = {
+  name?: string;
+  sampleId?: string;
+  experiment?: string;
+  outputDirectory?: string;
+  updatedAt?: number;
+  threshold?: number;
+  metrics?: Record<string, number>;
+  runtime?: Record<string, number>;
+  artifacts?: Record<string, string>;
+};
+
+type ApiState = "checking" | "online" | "offline";
+type ResultMode = "single" | "compare" | "overlay";
 
 const pipelineStages = [
   "Dataset",
@@ -44,39 +80,6 @@ const pipelineStages = [
   "Segmentation",
   "Evaluation",
   "Report"
-];
-
-const experiments = [
-  "e01_synthetic_shannon",
-  "pet_superpixel_shannon_graph",
-  "small_data_rgb_entropy"
-];
-
-const datasetCatalog = [
-  {
-    name: "Synthetic Shapes",
-    key: "synthetic_shapes",
-    mode: "Generated",
-    status: "Ready",
-    root: "No files required",
-    details: "Procedural masks for quick segmentation tests."
-  },
-  {
-    name: "scikit-image Examples",
-    key: "skimage_examples",
-    mode: "Built-in",
-    status: "Ready",
-    root: "Bundled with package",
-    details: "Small images for entropy smoke tests."
-  },
-  {
-    name: "Oxford-IIIT Pet",
-    key: "oxford_iiit_pet",
-    mode: "User-managed",
-    status: "Needs files",
-    root: "data/raw/oxford_iiit_pet",
-    details: "Expected folders: images, annotations."
-  }
 ];
 
 const representationCatalog = [
@@ -100,7 +103,128 @@ const representationCatalog = [
   }
 ];
 
+const artifactOrder = [
+  ["original_image", "Original"],
+  ["representation", "Representation"],
+  ["entropy_map", "Entropy map"],
+  ["prediction", "Prediction"],
+  ["ground_truth", "Ground truth"],
+  ["error_map", "Error map"]
+];
+
 function App() {
+  const [apiState, setApiState] = useState<ApiState>("checking");
+  const [datasets, setDatasets] = useState<DatasetStatus[]>([]);
+  const [dataset, setDataset] = useState("synthetic_shapes");
+  const [sampleIndex, setSampleIndex] = useState(0);
+  const [representation, setRepresentation] = useState("grayscale");
+  const [height, setHeight] = useState(256);
+  const [width, setWidth] = useState(256);
+  const [bins, setBins] = useState(64);
+  const [windowRadius, setWindowRadius] = useState(4);
+  const [preview, setPreview] = useState<PreviewPayload | null>(null);
+  const [runResult, setRunResult] = useState<RunPayload | null>(null);
+  const [runHistory, setRunHistory] = useState<RunPayload[]>([]);
+  const [statusText, setStatusText] = useState("Starting up");
+  const [isRunning, setIsRunning] = useState(false);
+  const [selectedArtifact, setSelectedArtifact] = useState("entropy_map");
+  const [resultMode, setResultMode] = useState<ResultMode>("compare");
+
+  const metrics = useMemo(() => {
+    const values = runResult?.metrics ?? {};
+    return [
+      { label: "Mean IoU", value: values.mean_iou, fallback: "0.000" },
+      { label: "Dice", value: values.dice, fallback: "0.000" },
+      { label: "Pixel accuracy", value: values.pixel_accuracy, fallback: "0.000" },
+      { label: "Precision", value: values.precision, fallback: "0.000" }
+    ].map((metric) => ({
+      label: metric.label,
+      value: metric.value == null ? metric.fallback : metric.value.toFixed(3)
+    }));
+  }, [runResult]);
+
+  useEffect(() => {
+    refreshDashboard();
+  }, []);
+
+  async function refreshDashboard() {
+    setStatusText("Checking local API");
+    try {
+      await apiFetch("/api/health");
+      const datasetPayload = await apiFetch<{ datasets: DatasetStatus[] }>("/api/datasets");
+      const latest = await apiFetch<RunPayload & { ready?: boolean }>("/api/results/latest");
+      const history = await apiFetch<{ runs: RunPayload[] }>("/api/runs");
+      setDatasets(datasetPayload.datasets);
+      if (latest.ready !== false) {
+        setRunResult(latest);
+      }
+      setRunHistory(history.runs);
+      setApiState("online");
+      setStatusText("Ready");
+    } catch {
+      setApiState("offline");
+      setStatusText("API offline");
+    }
+  }
+
+  async function loadPreview(index = sampleIndex) {
+    setStatusText("Loading dataset sample");
+    try {
+      const params = new URLSearchParams({
+        name: dataset,
+        sample_index: String(index),
+        representation,
+        height: String(height),
+        width: String(width)
+      });
+      const payload = await apiFetch<PreviewPayload>(`/api/datasets/preview?${params.toString()}`);
+      setPreview(payload);
+      setSampleIndex(index);
+      setStatusText(`Loaded ${payload.sampleId}`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : "Preview failed");
+    }
+  }
+
+  async function stepPreview(delta: number) {
+    const nextIndex = Math.max(0, Math.min(sampleLimit - 1, sampleIndex + delta));
+    await loadPreview(nextIndex);
+  }
+
+  async function runPipeline() {
+    setIsRunning(true);
+    setStatusText("Running vertical slice");
+    try {
+      const payload = await apiFetch<RunPayload>("/api/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataset,
+          sampleIndex,
+          representation,
+          height,
+          width,
+          bins,
+          windowRadius
+        })
+      });
+      setRunResult(payload);
+      const history = await apiFetch<{ runs: RunPayload[] }>("/api/runs");
+      setRunHistory(history.runs);
+      setStatusText(`Run complete: ${payload.experiment}`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : "Run failed");
+    } finally {
+      setIsRunning(false);
+    }
+  }
+
+  const canUseDataset = dataset !== "oxford_iiit_pet";
+  const sampleLimit = dataset === "skimage_examples" ? 5 : 16;
+  const resultArtifacts = runResult?.artifacts ?? {};
+  const selectedArtifactTitle =
+    artifactOrder.find(([key]) => key === selectedArtifact)?.[1] ?? "Artifact";
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -144,68 +268,96 @@ function App() {
           </div>
 
           <label>
-            Experiment
-            <select defaultValue="e01_synthetic_shannon">
-              {experiments.map((experiment) => (
-                <option key={experiment}>{experiment}</option>
-              ))}
+            Dataset
+            <select
+              value={dataset}
+              onChange={(event) => {
+                setDataset(event.target.value);
+                setSampleIndex(0);
+                setPreview(null);
+              }}
+            >
+              <option value="synthetic_shapes">synthetic_shapes</option>
+              <option value="skimage_examples">skimage_examples</option>
+              <option value="oxford_iiit_pet">oxford_iiit_pet</option>
             </select>
           </label>
 
           <label>
-            Dataset
-            <select defaultValue="synthetic_shapes">
-              <option>synthetic_shapes</option>
-              <option>skimage_examples</option>
-              <option>oxford_iiit_pet</option>
-            </select>
+            Sample
+            <input
+              type="number"
+              value={sampleIndex}
+              min={0}
+              max={sampleLimit - 1}
+              onChange={(event) => setSampleIndex(Number(event.target.value))}
+            />
           </label>
 
           <label>
             Representation
-            <select defaultValue="grayscale">
-              <option>rgb</option>
-              <option>grayscale</option>
-              <option>lab</option>
-              <option>slic_superpixels</option>
-            </select>
-          </label>
-
-          <label>
-            Entropy Measure
-            <select defaultValue="shannon">
-              <option>shannon</option>
-              <option>renyi</option>
-              <option>tsallis</option>
+            <select value={representation} onChange={(event) => setRepresentation(event.target.value)}>
+              <option value="rgb">rgb</option>
+              <option value="grayscale">grayscale</option>
+              <option value="lab">lab</option>
+              <option value="red">red</option>
+              <option value="green">green</option>
+              <option value="blue">blue</option>
             </select>
           </label>
 
           <div className="two-column">
             <label>
-              Bins
-              <input type="number" defaultValue={64} min={2} max={512} />
+              Height
+              <input type="number" value={height} min={32} max={768} onChange={(event) => setHeight(Number(event.target.value))} />
             </label>
             <label>
-              Window
-              <input type="number" defaultValue={9} min={3} max={31} step={2} />
+              Width
+              <input type="number" value={width} min={32} max={768} onChange={(event) => setWidth(Number(event.target.value))} />
             </label>
           </div>
 
-          <button className="primary-action">
+          <div className="two-column">
+            <label>
+              Bins
+              <input type="number" value={bins} min={2} max={512} onChange={(event) => setBins(Number(event.target.value))} />
+            </label>
+            <label>
+              Radius
+              <input
+                type="number"
+                value={windowRadius}
+                min={1}
+                max={16}
+                onChange={(event) => setWindowRadius(Number(event.target.value))}
+              />
+            </label>
+          </div>
+
+          <button className="secondary-action" onClick={() => loadPreview()} disabled={!canUseDataset || apiState !== "online"}>
+            <Image size={18} />
+            <span>Load Sample</span>
+          </button>
+
+          <button className="primary-action" onClick={runPipeline} disabled={!canUseDataset || isRunning || apiState !== "online"}>
             <Play size={18} />
-            <span>Run Pipeline</span>
+            <span>{isRunning ? "Running" : "Run Slice"}</span>
           </button>
         </section>
 
         <section className="control-panel">
           <div className="panel-heading">
             <HardDrive size={17} />
-            <h2>Dataset Root</h2>
+            <h2>Local API</h2>
           </div>
-          <label>
-            Local data folder
-            <input type="text" defaultValue="data/raw" />
-          </label>
+          <div className="api-status">
+            <span className={apiState === "online" ? "stage-dot complete" : "stage-dot"} />
+            <strong>{statusText}</strong>
+          </div>
+          <button className="secondary-action" onClick={refreshDashboard}>
+            <RefreshCw size={17} />
+            <span>Refresh</span>
+          </button>
           <button className="secondary-action">
             <UploadCloud size={17} />
             <span>Attach Dataset</span>
@@ -219,23 +371,16 @@ function App() {
             <p className="eyebrow">VE-0.1 Classical Vertical Slice</p>
             <h2>Entropy-Guided Image Segmentation</h2>
           </div>
-          <div className="topbar-actions">
-            <button title="Refresh">
-              <RefreshCw size={18} />
-            </button>
-            <button title="Save configuration">
-              <Save size={18} />
-            </button>
-            <button title="Export results">
-              <Download size={18} />
-            </button>
-          </div>
+          <span className={apiState === "online" ? "status-pill ready" : "status-pill missing"}>
+            {apiState === "online" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+            {apiState === "online" ? "API online" : "API offline"}
+          </span>
         </header>
 
         <section className="status-strip">
           {pipelineStages.map((stage, index) => (
             <div className="stage" key={stage}>
-              <span className={index < 4 ? "stage-dot complete" : "stage-dot"} />
+              <span className={runResult || index < 3 ? "stage-dot complete" : "stage-dot"} />
               <span>{stage}</span>
             </div>
           ))}
@@ -246,56 +391,108 @@ function App() {
             <article className="metric-card" key={metric.label}>
               <span>{metric.label}</span>
               <strong>{metric.value}</strong>
-              <em>{metric.delta}</em>
+              <em>{runResult?.experiment ?? "no run"}</em>
             </article>
           ))}
         </section>
 
         <section className="surface dataset-library">
           <div className="surface-heading split">
-            <div>
-              <div className="surface-title">
-                <Database size={18} />
-                <h3>Dataset Library</h3>
-              </div>
-              <p>Large datasets stay local under <strong>data/raw</strong>; only manifests and code are committed.</p>
+            <div className="surface-title">
+              <Database size={18} />
+              <h3>Dataset Library</h3>
             </div>
-            <button className="secondary-action compact">
+            <button className="secondary-action compact" onClick={refreshDashboard}>
               <RefreshCw size={17} />
               <span>Check Status</span>
             </button>
           </div>
 
           <div className="dataset-grid">
-            {datasetCatalog.map((dataset) => {
-              const ready = dataset.status === "Ready";
-              return (
-                <article className="dataset-card" key={dataset.key}>
-                  <div className="dataset-card-heading">
-                    <div>
-                      <h4>{dataset.name}</h4>
-                      <span>{dataset.key}</span>
-                    </div>
-                    <span className={ready ? "status-pill ready" : "status-pill missing"}>
-                      {ready ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-                      {dataset.status}
-                    </span>
+            {datasets.map((item) => (
+              <article className="dataset-card" key={item.name}>
+                <div className="dataset-card-heading">
+                  <div>
+                    <h4>{item.title}</h4>
+                    <span>{item.name}</span>
                   </div>
-                  <dl>
-                    <div>
-                      <dt>Mode</dt>
-                      <dd>{dataset.mode}</dd>
-                    </div>
-                    <div>
-                      <dt>Root</dt>
-                      <dd>{dataset.root}</dd>
-                    </div>
-                  </dl>
-                  <p>{dataset.details}</p>
-                </article>
-              );
-            })}
+                  <span className={item.ready ? "status-pill ready" : "status-pill missing"}>
+                    {item.ready ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                    {item.ready ? "Ready" : "Needs files"}
+                  </span>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Mode</dt>
+                    <dd>{item.mode}</dd>
+                  </div>
+                  <div>
+                    <dt>Root</dt>
+                    <dd>{item.root ?? "none"}</dd>
+                  </div>
+                </dl>
+              </article>
+            ))}
           </div>
+        </section>
+
+        <section className="surface dataset-viewer">
+          <div className="surface-heading split">
+            <div className="surface-title">
+              <Image size={18} />
+              <h3>Dataset Viewer</h3>
+            </div>
+            <div className="viewer-controls">
+              <button
+                className="icon-action"
+                title="Previous sample"
+                onClick={() => stepPreview(-1)}
+                disabled={!canUseDataset || apiState !== "online" || sampleIndex <= 0}
+              >
+                <ChevronLeft size={17} />
+              </button>
+              <span className={preview ? "status-pill ready" : "status-pill missing"}>
+                {preview ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                {preview ? preview.sampleId : "No sample loaded"}
+              </span>
+              <button
+                className="icon-action"
+                title="Next sample"
+                onClick={() => stepPreview(1)}
+                disabled={!canUseDataset || apiState !== "online" || sampleIndex >= sampleLimit - 1}
+              >
+                <ChevronRight size={17} />
+              </button>
+            </div>
+          </div>
+          <div className="live-viewer-grid">
+            <ImagePanel title="Original" src={preview?.images.original} />
+            <ImagePanel title={`Representation ${preview?.representation.name ?? ""}`} src={preview?.images.representation} />
+            <ImagePanel title="Mask" src={preview?.images.mask} />
+          </div>
+          {preview && (
+            <div className="viewer-details">
+              <dl className="parameter-list compact-list">
+                <div>
+                  <dt>Image</dt>
+                  <dd>{preview.imageShape.join(" x ")}</dd>
+                </div>
+                <div>
+                  <dt>Representation</dt>
+                  <dd>{preview.representation.shape.join(" x ")}</dd>
+                </div>
+                <div>
+                  <dt>Channels</dt>
+                  <dd>{preview.representation.channels.join(", ")}</dd>
+                </div>
+                <div>
+                  <dt>Label</dt>
+                  <dd>{preview.label ?? "none"}</dd>
+                </div>
+              </dl>
+              <pre className="metadata-preview">{JSON.stringify(preview.metadata, null, 2)}</pre>
+            </div>
+          )}
         </section>
 
         <section className="prep-grid">
@@ -307,19 +504,19 @@ function App() {
             <dl className="parameter-list">
               <div>
                 <dt>Resize</dt>
-                <dd>Mask-aware</dd>
-              </div>
-              <div>
-                <dt>Image order</dt>
-                <dd>Bilinear</dd>
-              </div>
-              <div>
-                <dt>Mask order</dt>
-                <dd>Nearest</dd>
+                <dd>{height} x {width}</dd>
               </div>
               <div>
                 <dt>Normalize</dt>
-                <dd>zero_one, standard</dd>
+                <dd>zero_one</dd>
+              </div>
+              <div>
+                <dt>Entropy bins</dt>
+                <dd>{bins}</dd>
+              </div>
+              <div>
+                <dt>Window radius</dt>
+                <dd>{windowRadius}</dd>
               </div>
             </dl>
           </article>
@@ -330,28 +527,110 @@ function App() {
               <h3>Representations</h3>
             </div>
             <div className="representation-grid">
-              {representationCatalog.map((representation) => (
-                <article className="representation-card" key={representation.name}>
-                  <h4>{representation.name}</h4>
-                  <span>{representation.shape}</span>
-                  <p>{representation.channels}</p>
-                  <em>{representation.use}</em>
+              {representationCatalog.map((item) => (
+                <article className="representation-card" key={item.name}>
+                  <h4>{item.name}</h4>
+                  <span>{item.shape}</span>
+                  <p>{item.channels}</p>
+                  <em>{item.use}</em>
                 </article>
               ))}
             </div>
           </article>
         </section>
 
+        <section className="surface run-history">
+          <div className="surface-heading split">
+            <div className="surface-title">
+              <Table2 size={18} />
+              <h3>Run History</h3>
+            </div>
+            <span className="status-pill ready">{runHistory.length} runs</span>
+          </div>
+          <div className="run-history-grid">
+            {runHistory.map((run) => (
+              <button
+                className={(runResult?.experiment ?? runResult?.name) === (run.experiment ?? run.name) ? "run-card active" : "run-card"}
+                key={run.name ?? run.outputDirectory}
+                onClick={() => {
+                  setRunResult(run);
+                  setStatusText(`Loaded run: ${run.experiment ?? run.name}`);
+                }}
+              >
+                <strong>{run.experiment ?? run.name}</strong>
+                <span>{run.outputDirectory ?? "outputs/runs"}</span>
+                <dl>
+                  <div>
+                    <dt>IoU</dt>
+                    <dd>{formatMetric(run.metrics?.mean_iou)}</dd>
+                  </div>
+                  <div>
+                    <dt>Dice</dt>
+                    <dd>{formatMetric(run.metrics?.dice)}</dd>
+                  </div>
+                  <div>
+                    <dt>Accuracy</dt>
+                    <dd>{formatMetric(run.metrics?.pixel_accuracy)}</dd>
+                  </div>
+                </dl>
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="content-grid">
           <article className="surface large">
-            <div className="surface-heading">
-              <Image size={18} />
-              <h3>Image And Entropy Map</h3>
+            <div className="surface-heading split">
+              <div className="surface-title">
+                <Image size={18} />
+                <h3>Result Viewer</h3>
+              </div>
+              <div className="segmented-control">
+                <button
+                  className={resultMode === "single" ? "active" : ""}
+                  onClick={() => setResultMode("single")}
+                  title="Single artifact"
+                >
+                  <Image size={16} />
+                  <span>Single</span>
+                </button>
+                <button
+                  className={resultMode === "compare" ? "active" : ""}
+                  onClick={() => setResultMode("compare")}
+                  title="Compare with original"
+                >
+                  <Columns2 size={16} />
+                  <span>Compare</span>
+                </button>
+                <button
+                  className={resultMode === "overlay" ? "active" : ""}
+                  onClick={() => setResultMode("overlay")}
+                  title="Overlay prediction"
+                >
+                  <Layers size={16} />
+                  <span>Overlay</span>
+                </button>
+              </div>
             </div>
-            <div className="image-comparison">
-              <div className="synthetic-preview original" aria-label="Original synthetic sample" />
-              <div className="synthetic-preview entropy" aria-label="Entropy heatmap preview" />
+            <div className="artifact-tabs">
+              {artifactOrder.map(([key, title]) => (
+                <button
+                  key={key}
+                  className={selectedArtifact === key ? "active" : ""}
+                  onClick={() => setSelectedArtifact(key)}
+                  disabled={!resultArtifacts[key]}
+                >
+                  {title}
+                </button>
+              ))}
             </div>
+            <ResultArtifactViewer
+              mode={resultMode}
+              selectedTitle={selectedArtifactTitle}
+              original={resultArtifacts.original_image}
+              selected={resultArtifacts[selectedArtifact]}
+              prediction={resultArtifacts.prediction}
+            />
           </article>
 
           <article className="surface">
@@ -359,28 +638,30 @@ function App() {
               <GitBranch size={18} />
               <h3>Segmentation</h3>
             </div>
-            <div className="segmentation-preview">
-              <span />
-              <span />
-              <span />
-              <span />
+            <div className="mini-artifacts">
+              <ImagePanel title="Ground truth" src={resultArtifacts.ground_truth} />
+              <ImagePanel title="Error map" src={resultArtifacts.error_map} />
             </div>
           </article>
 
           <article className="surface">
             <div className="surface-heading">
-              <LineChart size={18} />
-              <h3>Run Trend</h3>
+              <Table2 size={18} />
+              <h3>Artifacts</h3>
             </div>
-            <div className="trend">
-              <span style={{ height: "34%" }} />
-              <span style={{ height: "52%" }} />
-              <span style={{ height: "41%" }} />
-              <span style={{ height: "68%" }} />
-              <span style={{ height: "76%" }} />
-              <span style={{ height: "61%" }} />
-              <span style={{ height: "84%" }} />
-            </div>
+            <ul className="artifact-list">
+              {artifactOrder.map(([key, title]) => (
+                <li
+                  key={key}
+                  className={selectedArtifact === key ? "active" : ""}
+                  onClick={() => {
+                    if (resultArtifacts[key]) setSelectedArtifact(key);
+                  }}
+                >
+                  {resultArtifacts[key] ? title : `${title} pending`}
+                </li>
+              ))}
+            </ul>
           </article>
 
           <article className="surface">
@@ -390,20 +671,16 @@ function App() {
             </div>
             <dl className="parameter-list">
               <div>
-                <dt>Seed</dt>
-                <dd>42</dd>
+                <dt>Dataset</dt>
+                <dd>{dataset}</dd>
               </div>
               <div>
-                <dt>Image size</dt>
-                <dd>256 x 256</dd>
-              </div>
-              <div>
-                <dt>Superpixels</dt>
-                <dd>250</dd>
+                <dt>Sample</dt>
+                <dd>{sampleIndex}</dd>
               </div>
               <div>
                 <dt>Output</dt>
-                <dd>outputs/runs</dd>
+                <dd>{runResult?.experiment ?? "none"}</dd>
               </div>
             </dl>
           </article>
@@ -411,12 +688,13 @@ function App() {
           <article className="surface">
             <div className="surface-heading">
               <Braces size={18} />
-              <h3>Config Preview</h3>
+              <h3>Run Config</h3>
             </div>
-            <pre>{`entropy:
-  name: shannon
-  parameters:
-    bins: 64
+            <pre>{`dataset: ${dataset}
+representation: ${representation}
+entropy:
+  bins: ${bins}
+  window_radius: ${windowRadius}
 segmentation:
   name: maximum_entropy_threshold`}</pre>
           </article>
@@ -424,6 +702,71 @@ segmentation:
       </section>
     </main>
   );
+}
+
+function ImagePanel({ title, src }: { title: string; src?: string | null }) {
+  return (
+    <figure className="image-panel">
+      {src ? <img src={apiFileUrl(src)} alt={title} /> : <div className="empty-image" />}
+      <figcaption>{title}</figcaption>
+    </figure>
+  );
+}
+
+function ResultArtifactViewer({
+  mode,
+  selectedTitle,
+  original,
+  selected,
+  prediction
+}: {
+  mode: ResultMode;
+  selectedTitle: string;
+  original?: string;
+  selected?: string;
+  prediction?: string;
+}) {
+  if (mode === "single") {
+    return (
+      <div className="artifact-board single">
+        <ImagePanel title={selectedTitle} src={selected} />
+      </div>
+    );
+  }
+
+  if (mode === "overlay") {
+    return (
+      <figure className="overlay-panel">
+        {original ? <img src={apiFileUrl(original)} alt="Original" /> : <div className="empty-image" />}
+        {prediction && <img className="overlay-image" src={apiFileUrl(prediction)} alt="Prediction overlay" />}
+        <figcaption>Prediction overlay</figcaption>
+      </figure>
+    );
+  }
+
+  return (
+    <div className="artifact-board">
+      <ImagePanel title="Original" src={original} />
+      <ImagePanel title={selectedTitle} src={selected} />
+    </div>
+  );
+}
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, init);
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error ?? "API request failed");
+  }
+  return payload as T;
+}
+
+function apiFileUrl(path: string) {
+  return path.startsWith("/api/") ? `${API_BASE}${path}` : path;
+}
+
+function formatMetric(value?: number) {
+  return value == null ? "0.000" : value.toFixed(3);
 }
 
 export default App;
