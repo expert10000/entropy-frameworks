@@ -48,7 +48,7 @@ class SyntheticShapesDataset:
             mask[rr, cc] = shape_id
 
         image = gaussian(image, sigma=0.7, channel_axis=-1, preserve_range=True)
-        image = random_noise(image, mode="s&p", amount=self.config.noise_amount, seed=self.config.seed + index)
+        image = random_noise(image, mode="s&p", amount=self.config.noise_amount, rng=self.config.seed + index)
         image = np.clip(image, 0.0, 1.0).astype(np.float32)
 
         return ImageSample(

@@ -21,6 +21,18 @@ pip install -e ".[dev]"
 pytest
 ```
 
+Check local dataset readiness:
+
+```powershell
+visionentropy dataset list
+visionentropy dataset status oxford_iiit_pet
+visionentropy dataset inspect --name synthetic_shapes --sample-index 0
+visionentropy dataset inspect --name synthetic_shapes --resize 128 128 --normalize zero_one --representation lab
+```
+
+Large datasets are user-managed under `data/raw` and excluded from Git. See
+[data/README.md](data/README.md) and [configs/datasets.yaml](configs/datasets.yaml).
+
 ### Admin web app
 
 ```powershell

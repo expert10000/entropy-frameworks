@@ -1,0 +1,23 @@
+datasets:
+  synthetic_shapes:
+    title: Synthetic Shapes
+    mode: generated
+    root: null
+    required_paths: []
+    description: Procedural shapes for deterministic segmentation tests.
+
+  skimage_examples:
+    title: scikit-image Examples
+    mode: builtin
+    root: null
+    required_paths: []
+    description: Small bundled images for smoke tests and demos.
+
+  oxford_iiit_pet:
+    title: Oxford-IIIT Pet
+    mode: user_managed
+    root: data/raw/oxford_iiit_pet
+    required_paths:
+      - images
+      - annotations
+    description: RGB pet photos with segmentation masks. Keep this dataset outside Git.

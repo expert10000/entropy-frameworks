@@ -1,21 +1,26 @@
 import {
   Activity,
+  AlertTriangle,
   BarChart3,
   Boxes,
   Braces,
+  CheckCircle2,
   Database,
   Download,
   FlaskConical,
-  Gauge,
   GitBranch,
+  HardDrive,
   Image,
   LineChart,
+  Maximize2,
   Network,
+  Palette,
   Play,
   RefreshCw,
   Save,
   Settings2,
-  SlidersHorizontal
+  SlidersHorizontal,
+  UploadCloud
 } from "lucide-react";
 
 type Metric = {
@@ -45,6 +50,54 @@ const experiments = [
   "e01_synthetic_shannon",
   "pet_superpixel_shannon_graph",
   "small_data_rgb_entropy"
+];
+
+const datasetCatalog = [
+  {
+    name: "Synthetic Shapes",
+    key: "synthetic_shapes",
+    mode: "Generated",
+    status: "Ready",
+    root: "No files required",
+    details: "Procedural masks for quick segmentation tests."
+  },
+  {
+    name: "scikit-image Examples",
+    key: "skimage_examples",
+    mode: "Built-in",
+    status: "Ready",
+    root: "Bundled with package",
+    details: "Small images for entropy smoke tests."
+  },
+  {
+    name: "Oxford-IIIT Pet",
+    key: "oxford_iiit_pet",
+    mode: "User-managed",
+    status: "Needs files",
+    root: "data/raw/oxford_iiit_pet",
+    details: "Expected folders: images, annotations."
+  }
+];
+
+const representationCatalog = [
+  {
+    name: "RGB",
+    shape: "H x W x 3",
+    channels: "red, green, blue",
+    use: "Baseline image tensor"
+  },
+  {
+    name: "Grayscale",
+    shape: "H x W",
+    channels: "intensity",
+    use: "Local entropy and thresholding"
+  },
+  {
+    name: "Lab",
+    shape: "H x W x 3",
+    channels: "l, a, b",
+    use: "Color-distance segmentation"
+  }
 ];
 
 function App() {
@@ -143,6 +196,21 @@ function App() {
             <span>Run Pipeline</span>
           </button>
         </section>
+
+        <section className="control-panel">
+          <div className="panel-heading">
+            <HardDrive size={17} />
+            <h2>Dataset Root</h2>
+          </div>
+          <label>
+            Local data folder
+            <input type="text" defaultValue="data/raw" />
+          </label>
+          <button className="secondary-action">
+            <UploadCloud size={17} />
+            <span>Attach Dataset</span>
+          </button>
+        </section>
       </aside>
 
       <section className="workspace">
@@ -181,6 +249,97 @@ function App() {
               <em>{metric.delta}</em>
             </article>
           ))}
+        </section>
+
+        <section className="surface dataset-library">
+          <div className="surface-heading split">
+            <div>
+              <div className="surface-title">
+                <Database size={18} />
+                <h3>Dataset Library</h3>
+              </div>
+              <p>Large datasets stay local under <strong>data/raw</strong>; only manifests and code are committed.</p>
+            </div>
+            <button className="secondary-action compact">
+              <RefreshCw size={17} />
+              <span>Check Status</span>
+            </button>
+          </div>
+
+          <div className="dataset-grid">
+            {datasetCatalog.map((dataset) => {
+              const ready = dataset.status === "Ready";
+              return (
+                <article className="dataset-card" key={dataset.key}>
+                  <div className="dataset-card-heading">
+                    <div>
+                      <h4>{dataset.name}</h4>
+                      <span>{dataset.key}</span>
+                    </div>
+                    <span className={ready ? "status-pill ready" : "status-pill missing"}>
+                      {ready ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                      {dataset.status}
+                    </span>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Mode</dt>
+                      <dd>{dataset.mode}</dd>
+                    </div>
+                    <div>
+                      <dt>Root</dt>
+                      <dd>{dataset.root}</dd>
+                    </div>
+                  </dl>
+                  <p>{dataset.details}</p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="prep-grid">
+          <article className="surface">
+            <div className="surface-heading">
+              <Maximize2 size={18} />
+              <h3>Preprocessing</h3>
+            </div>
+            <dl className="parameter-list">
+              <div>
+                <dt>Resize</dt>
+                <dd>Mask-aware</dd>
+              </div>
+              <div>
+                <dt>Image order</dt>
+                <dd>Bilinear</dd>
+              </div>
+              <div>
+                <dt>Mask order</dt>
+                <dd>Nearest</dd>
+              </div>
+              <div>
+                <dt>Normalize</dt>
+                <dd>zero_one, standard</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article className="surface representation-library">
+            <div className="surface-heading">
+              <Palette size={18} />
+              <h3>Representations</h3>
+            </div>
+            <div className="representation-grid">
+              {representationCatalog.map((representation) => (
+                <article className="representation-card" key={representation.name}>
+                  <h4>{representation.name}</h4>
+                  <span>{representation.shape}</span>
+                  <p>{representation.channels}</p>
+                  <em>{representation.use}</em>
+                </article>
+              ))}
+            </div>
+          </article>
         </section>
 
         <section className="content-grid">
