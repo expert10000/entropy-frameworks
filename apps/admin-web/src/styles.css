@@ -161,6 +161,58 @@ dt {
   font-size: 15px;
 }
 
+.setup-stage {
+  display: grid;
+  gap: 11px;
+  min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid #e1e9ec;
+}
+
+.setup-stage:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.setup-stage h3 {
+  margin: 0;
+  color: #155e6e;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.run-stage {
+  gap: 10px;
+}
+
+.readonly-setting {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #d8e0e3;
+  border-radius: 7px;
+  background: #f8fbfb;
+}
+
+.readonly-setting span {
+  color: #617178;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.readonly-setting strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #182026;
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 label {
   display: grid;
   gap: 7px;

@@ -23,8 +23,11 @@ from visionentropy.datasets.synthetic_shapes import (
     SyntheticShapesDataset,
     synthetic_config_from_preset,
 )
+from visionentropy.deep import DeepEntropyResult, analyze_deep_features
+from visionentropy.deep.features import activation_projection
 from visionentropy.entropy import LocalEntropyMap
 from visionentropy.evaluation import binary_metrics
+from visionentropy.graphs import GraphEntropyResult, analyze_region_graph
 from visionentropy.pipeline.base import PipelineResult
 from visionentropy.pipeline.metadata import build_run_metadata
 from visionentropy.preprocessing import ComposeTransforms, NormalizeImage, ResizeSample
@@ -99,6 +102,16 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         entropy_map=entropy_result.map,
         entropy_bins=bins,
     )
+    graph_entropy = analyze_region_graph(region_representation)
+    deep_config = config.get("deep", {})
+    deep_result = None
+    if bool(deep_config.get("enabled", False)):
+        deep_result = analyze_deep_features(
+            sample.image,
+            model_name=deep_config.get("model", "resnet18"),
+            image_size=int(deep_config.get("image_size", 128)),
+            random_state=int(deep_config.get("random_state", 0)),
+        )
 
     if segmentation_name in {"feature_kmeans", "boundary_region_kmeans", "kmeans"}:
         feature_entropy_map = LocalEntropyMap(window_radius=window_radius, bins=bins).compute(grayscale).map
@@ -222,6 +235,8 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         score_map=score_map,
         threshold_curve=threshold_curve,
         region_representation=region_representation,
+        graph_entropy=graph_entropy,
+        deep_result=deep_result,
         started=started,
     )
 
@@ -257,6 +272,14 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
                 "count": region_representation.region_count,
                 "edge_count": len(region_representation.edges),
             },
+            "graph": {
+                "mean_node_entropy": graph_entropy.mean_node_entropy,
+                "mean_edge_entropy": graph_entropy.mean_edge_entropy,
+                "spectral_entropy": graph_entropy.spectral_entropy,
+                "normalized_spectral_entropy": graph_entropy.normalized_spectral_entropy,
+                "partition_count": int(np.unique(graph_entropy.partition_labels).size),
+            },
+            "deep": _deep_summary(deep_result) if deep_result is not None else None,
         },
     )
 
@@ -350,6 +373,8 @@ def _save_artifacts(
     score_map: np.ndarray | None = None,
     threshold_curve: bool = False,
     region_representation: RegionRepresentation | None = None,
+    graph_entropy: GraphEntropyResult | None = None,
+    deep_result: DeepEntropyResult | None = None,
 ) -> dict[str, str]:
     config_target = output_directory / "config.yaml"
     if config_path is not None:
@@ -370,6 +395,10 @@ def _save_artifacts(
         "region_mean": str(images_directory / "region_mean.png"),
         "region_entropy": str(images_directory / "region_entropy.png"),
         "region_graph": str(images_directory / "region_graph.png"),
+        "graph_node_entropy": str(images_directory / "graph_node_entropy.png"),
+        "graph_edge_entropy": str(images_directory / "graph_edge_entropy.png"),
+        "graph_spectral_entropy": str(images_directory / "graph_spectral_entropy.png"),
+        "graph_partition": str(images_directory / "graph_partition.png"),
         "score_map": str(images_directory / "score_map.png"),
         "prediction": str(images_directory / "prediction.png"),
         "metrics_json": str(output_directory / "metrics.json"),
@@ -384,6 +413,9 @@ def _save_artifacts(
         "region_stats_json": str(output_directory / "region_stats.json"),
         "region_stats_csv": str(output_directory / "region_stats.csv"),
         "region_graph_json": str(output_directory / "region_graph.json"),
+        "graph_entropy_json": str(output_directory / "graph_entropy.json"),
+        "graph_node_entropy_array": str(data_directory / "graph_node_entropy.npy"),
+        "graph_partition_array": str(data_directory / "graph_partition.npy"),
     }
 
     imsave(artifacts["original_image"], _to_uint8_rgb(sample.image), check_contrast=False)
@@ -413,7 +445,23 @@ def _save_artifacts(
         check_contrast=False,
     )
     _save_region_graph(Path(artifacts["region_graph"]), region_representation)
+    if graph_entropy is None:
+        graph_entropy = analyze_region_graph(region_representation)
+    imsave(
+        artifacts["graph_node_entropy"],
+        _heatmap(_node_value_image(region_representation.labels, graph_entropy.node_entropy)),
+        check_contrast=False,
+    )
+    imsave(
+        artifacts["graph_partition"],
+        _label_image(_node_value_image(region_representation.labels, graph_entropy.partition_labels).astype(np.int32)),
+        check_contrast=False,
+    )
+    _save_edge_entropy_graph(Path(artifacts["graph_edge_entropy"]), region_representation, graph_entropy)
+    _save_spectral_entropy_plot(Path(artifacts["graph_spectral_entropy"]), graph_entropy)
     np.save(artifacts["region_labels_array"], region_representation.labels.astype(np.int32))
+    np.save(artifacts["graph_node_entropy_array"], graph_entropy.node_entropy.astype(np.float32))
+    np.save(artifacts["graph_partition_array"], graph_entropy.partition_labels.astype(np.int32))
     Path(artifacts["region_stats_json"]).write_text(
         json.dumps(region_representation.stats, indent=2, sort_keys=True),
         encoding="utf-8",
@@ -423,6 +471,18 @@ def _save_artifacts(
         json.dumps(region_graph_payload(region_representation), indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    Path(artifacts["graph_entropy_json"]).write_text(
+        json.dumps(graph_entropy.payload(region_representation), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    if deep_result is not None:
+        _save_deep_artifacts(
+            deep_result,
+            artifacts,
+            images_directory=images_directory,
+            data_directory=data_directory,
+            output_directory=output_directory,
+        )
     imsave(artifacts["score_map"], _heatmap(score_map if score_map is not None else entropy_map), check_contrast=False)
     _save_histogram(Path(artifacts["histogram"]), representation_data, threshold=threshold)
     if threshold is not None and threshold_curve:
@@ -492,6 +552,16 @@ def _artifact_radius(config: dict[str, Any]) -> int:
     return int(entropy_config.get("window_radius", 4))
 
 
+def _deep_summary(deep_result: DeepEntropyResult) -> dict[str, Any]:
+    return {
+        "available": deep_result.available,
+        "model": deep_result.model_name,
+        "mean_activation_entropy": deep_result.mean_activation_entropy,
+        "latent_entropy": deep_result.latent_entropy,
+        "predictive_entropy": deep_result.predictive_entropy,
+    }
+
+
 def _save_region_graph(path: Path, representation: RegionRepresentation) -> None:
     figure, axis = plt.subplots(figsize=(5.2, 3.8), dpi=130)
     labels = representation.labels
@@ -514,6 +584,148 @@ def _save_region_graph(path: Path, representation: RegionRepresentation) -> None
     figure.tight_layout(pad=0.2)
     figure.savefig(path)
     plt.close(figure)
+
+
+def _save_edge_entropy_graph(
+    path: Path,
+    representation: RegionRepresentation,
+    graph_entropy: GraphEntropyResult,
+) -> None:
+    figure, axis = plt.subplots(figsize=(5.2, 3.8), dpi=130)
+    labels = representation.labels
+    axis.imshow(_label_image(labels), alpha=0.3)
+    centroids = {
+        int(row["label"]): (float(row["centroid_x"]), float(row["centroid_y"]))
+        for row in representation.stats
+    }
+    edge_values = graph_entropy.edge_entropy
+    for index, (source, target) in enumerate(representation.edges):
+        if source not in centroids or target not in centroids:
+            continue
+        source_x, source_y = centroids[source]
+        target_x, target_y = centroids[target]
+        value = float(edge_values[index]) if index < edge_values.size else 0.0
+        axis.plot(
+            [source_x, target_x],
+            [source_y, target_y],
+            color=colormaps["magma"](value),
+            linewidth=0.45 + (2.0 * value),
+            alpha=0.78,
+        )
+    if centroids:
+        points = np.asarray(list(centroids.values()), dtype=np.float32)
+        node_values = graph_entropy.node_entropy[: points.shape[0]]
+        axis.scatter(
+            points[:, 0],
+            points[:, 1],
+            s=12 + (30 * node_values),
+            c=node_values,
+            cmap="viridis",
+            edgecolors="#182026",
+            linewidths=0.25,
+        )
+    axis.set_title(f"Edge entropy: mean {graph_entropy.mean_edge_entropy:.3f}")
+    axis.set_axis_off()
+    figure.tight_layout(pad=0.2)
+    figure.savefig(path)
+    plt.close(figure)
+
+
+def _save_spectral_entropy_plot(path: Path, graph_entropy: GraphEntropyResult) -> None:
+    figure, axis = plt.subplots(figsize=(5.2, 3.2), dpi=130)
+    eigenvalues = graph_entropy.eigenvalues
+    if eigenvalues.size:
+        axis.plot(np.arange(eigenvalues.size), eigenvalues, color="#1f7a8c", linewidth=1.8)
+        axis.fill_between(np.arange(eigenvalues.size), eigenvalues, color="#1f7a8c", alpha=0.18)
+    axis.set_title(f"Spectral entropy: {graph_entropy.normalized_spectral_entropy:.3f}")
+    axis.set_xlabel("Laplacian eigenvalue index")
+    axis.set_ylabel("eigenvalue")
+    axis.grid(True, alpha=0.22)
+    figure.tight_layout()
+    figure.savefig(path)
+    plt.close(figure)
+
+
+def _save_deep_artifacts(
+    deep_result: DeepEntropyResult,
+    artifacts: dict[str, str],
+    *,
+    images_directory: Path,
+    data_directory: Path,
+    output_directory: Path,
+) -> None:
+    artifacts.update(
+        {
+            "deep_feature_map": str(images_directory / "deep_feature_map.png"),
+            "activation_entropy": str(images_directory / "activation_entropy.png"),
+            "latent_entropy": str(images_directory / "latent_entropy.png"),
+            "predictive_entropy": str(images_directory / "predictive_entropy.png"),
+            "deep_entropy_json": str(output_directory / "deep_entropy.json"),
+            "deep_feature_map_array": str(data_directory / "deep_feature_map.npy"),
+            "activation_entropy_array": str(data_directory / "activation_entropy.npy"),
+            "latent_vector_array": str(data_directory / "latent_vector.npy"),
+            "predictive_logits_array": str(data_directory / "predictive_logits.npy"),
+        }
+    )
+    Path(artifacts["deep_entropy_json"]).write_text(
+        json.dumps(deep_result.payload(), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    if not deep_result.available:
+        return
+
+    imsave(artifacts["deep_feature_map"], _heatmap(activation_projection(deep_result.feature_map)), check_contrast=False)
+    imsave(artifacts["activation_entropy"], _heatmap(deep_result.activation_entropy), check_contrast=False)
+    _save_latent_entropy_plot(Path(artifacts["latent_entropy"]), deep_result)
+    _save_predictive_entropy_plot(Path(artifacts["predictive_entropy"]), deep_result)
+    np.save(artifacts["deep_feature_map_array"], deep_result.feature_map.astype(np.float32))
+    np.save(artifacts["activation_entropy_array"], deep_result.activation_entropy.astype(np.float32))
+    np.save(artifacts["latent_vector_array"], deep_result.latent_vector.astype(np.float32))
+    np.save(artifacts["predictive_logits_array"], deep_result.logits.astype(np.float32))
+
+
+def _save_latent_entropy_plot(path: Path, deep_result: DeepEntropyResult) -> None:
+    figure, axis = plt.subplots(figsize=(5.2, 3.2), dpi=130)
+    values = np.abs(deep_result.latent_vector)
+    axis.hist(values, bins=48, color="#1f7a8c", alpha=0.86)
+    axis.set_title(f"Latent entropy: {deep_result.latent_entropy:.3f}")
+    axis.set_xlabel("absolute activation")
+    axis.set_ylabel("features")
+    axis.grid(True, alpha=0.22)
+    figure.tight_layout()
+    figure.savefig(path)
+    plt.close(figure)
+
+
+def _save_predictive_entropy_plot(path: Path, deep_result: DeepEntropyResult) -> None:
+    figure, axis = plt.subplots(figsize=(5.2, 3.2), dpi=130)
+    probabilities = deep_result.predictive_probabilities
+    if probabilities.size:
+        top_indices = np.argsort(probabilities)[-12:][::-1]
+        axis.bar(
+            [str(int(index)) for index in top_indices],
+            probabilities[top_indices],
+            color="#ef476f",
+            alpha=0.86,
+        )
+    axis.set_title(f"Predictive entropy: {deep_result.predictive_entropy:.3f}")
+    axis.set_xlabel("class index")
+    axis.set_ylabel("probability")
+    axis.grid(True, axis="y", alpha=0.22)
+    figure.tight_layout()
+    figure.savefig(path)
+    plt.close(figure)
+
+
+def _node_value_image(labels: np.ndarray, node_values: np.ndarray) -> np.ndarray:
+    label_array = np.asarray(labels, dtype=np.int32)
+    values = np.asarray(node_values)
+    if values.size == 0:
+        return np.zeros_like(label_array, dtype=np.float32)
+    lookup = np.zeros(int(label_array.max()) + 1, dtype=values.dtype)
+    count = min(lookup.size, values.size)
+    lookup[:count] = values[:count]
+    return lookup[label_array]
 
 
 def _write_region_stats_csv(path: Path, stats: list[dict[str, float | int]]) -> None:

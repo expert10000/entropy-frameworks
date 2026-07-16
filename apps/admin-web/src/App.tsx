@@ -94,6 +94,20 @@ type RunPayload = {
     count?: number;
     edge_count?: number;
   };
+  graph?: {
+    mean_node_entropy?: number;
+    mean_edge_entropy?: number;
+    spectral_entropy?: number;
+    normalized_spectral_entropy?: number;
+    partition_count?: number;
+  } | null;
+  deep?: {
+    available?: boolean;
+    model?: string;
+    mean_activation_entropy?: number;
+    latent_entropy?: number;
+    predictive_entropy?: number;
+  } | null;
   metrics?: Record<string, number>;
   runtime?: Record<string, number>;
   artifacts?: Record<string, string>;
@@ -229,6 +243,14 @@ const artifactOrder = [
   ["region_mean", "Region mean"],
   ["region_entropy", "Region entropy"],
   ["region_graph", "Region graph"],
+  ["graph_node_entropy", "Node entropy"],
+  ["graph_edge_entropy", "Edge entropy"],
+  ["graph_spectral_entropy", "Spectral entropy"],
+  ["graph_partition", "Graph partition"],
+  ["deep_feature_map", "Deep feature map"],
+  ["activation_entropy", "Activation entropy"],
+  ["latent_entropy", "Latent entropy"],
+  ["predictive_entropy", "Predictive entropy"],
   ["score_map", "Score map"],
   ["cluster_labels", "Clusters"],
   ["prediction", "Prediction"],
@@ -544,44 +566,50 @@ function App() {
             <h2>Run Setup</h2>
           </div>
 
-          <label>
-            Dataset
-            <select
-              value={dataset}
-              onChange={(event) => {
-                setDataset(event.target.value);
-                setSampleIndex(0);
-                setPreview(null);
-              }}
-            >
-              <option value="synthetic_shapes">synthetic_shapes</option>
-              <option value="skimage_examples">skimage_examples</option>
-              <option value="oxford_iiit_pet">oxford_iiit_pet</option>
-            </select>
-          </label>
+          <div className="setup-stage">
+            <h3>Data</h3>
+            <label>
+              Dataset
+              <select
+                value={dataset}
+                onChange={(event) => {
+                  setDataset(event.target.value);
+                  setSampleIndex(0);
+                  setPreview(null);
+                }}
+              >
+                <option value="synthetic_shapes">synthetic_shapes</option>
+                <option value="skimage_examples">skimage_examples</option>
+                <option value="oxford_iiit_pet">oxford_iiit_pet</option>
+              </select>
+            </label>
 
-          <label>
-            Sample
-            <input
-              type="number"
-              value={sampleIndex}
-              min={0}
-              max={sampleLimit - 1}
-              onChange={(event) => setSampleIndex(Number(event.target.value))}
-            />
-          </label>
+            <label>
+              Sample
+              <input
+                type="number"
+                value={sampleIndex}
+                min={0}
+                max={sampleLimit - 1}
+                onChange={(event) => setSampleIndex(Number(event.target.value))}
+              />
+            </label>
 
-          {dataset === "synthetic_shapes" && (
-            <div className="synthetic-controls">
+            {dataset === "synthetic_shapes" && (
               <label>
-                Benchmark preset
+                Preset
                 <select value={syntheticPreset} onChange={(event) => applySyntheticPreset(event.target.value)}>
                   {syntheticPresets.map((preset) => (
                     <option value={preset.id} key={preset.id}>{preset.label}</option>
                   ))}
                 </select>
               </label>
+            )}
+          </div>
 
+          {dataset === "synthetic_shapes" && (
+            <div className="setup-stage synthetic-controls">
+              <h3>Synthetic controls</h3>
               <div className="two-column">
                 <label>
                   Shapes
@@ -639,95 +667,116 @@ function App() {
             </div>
           )}
 
-          <label>
-            Representation
-            <select value={representation} onChange={(event) => setRepresentation(event.target.value)}>
-              <option value="rgb">rgb</option>
-              <option value="grayscale">grayscale</option>
-              <option value="lab">lab</option>
-              <option value="red">red</option>
-              <option value="green">green</option>
-              <option value="blue">blue</option>
-            </select>
-          </label>
+          <div className="setup-stage">
+            <h3>Preprocessing</h3>
+            <div className="two-column">
+              <label>
+                Height
+                <input type="number" value={height} min={32} max={768} onChange={(event) => setHeight(Number(event.target.value))} />
+              </label>
+              <label>
+                Width
+                <input type="number" value={width} min={32} max={768} onChange={(event) => setWidth(Number(event.target.value))} />
+              </label>
+            </div>
+            <div className="readonly-setting">
+              <span>Normalize</span>
+              <strong>zero_one</strong>
+            </div>
+          </div>
 
-          <label>
-            Entropy measure
-            <select value={entropyMeasure} onChange={(event) => setEntropyMeasure(event.target.value)}>
-              <option value="shannon">Shannon</option>
-              <option value="renyi" disabled>Renyi pending</option>
-              <option value="tsallis" disabled>Tsallis pending</option>
-            </select>
-          </label>
-
-          <label>
-            Entropy scope
-            <select value={entropyScope} onChange={(event) => setEntropyScope(event.target.value)}>
-              <option value="local">local</option>
-              <option value="global" disabled>global pending</option>
-              <option value="region" disabled>region pending</option>
-            </select>
-          </label>
-
-          <label>
-            Segmentation method
-            <select value={segmentationMethod} onChange={(event) => setSegmentationMethod(event.target.value)}>
-              {segmentationOptions.map((option) => (
-                <option value={option.value} key={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-
-          <div className="two-column">
+          <div className="setup-stage">
+            <h3>Representation</h3>
             <label>
-              Height
-              <input type="number" value={height} min={32} max={768} onChange={(event) => setHeight(Number(event.target.value))} />
-            </label>
-            <label>
-              Width
-              <input type="number" value={width} min={32} max={768} onChange={(event) => setWidth(Number(event.target.value))} />
+              Color space
+              <select value={representation} onChange={(event) => setRepresentation(event.target.value)}>
+                <option value="rgb">RGB</option>
+                <option value="grayscale">Gray</option>
+                <option value="lab">Lab</option>
+                <option value="red">Red</option>
+                <option value="green">Green</option>
+                <option value="blue">Blue</option>
+              </select>
             </label>
           </div>
 
-          <div className="two-column">
+          <div className="setup-stage">
+            <h3>Entropy</h3>
             <label>
-              Bins
-              <input type="number" value={bins} min={2} max={512} onChange={(event) => setBins(Number(event.target.value))} />
+              Measure
+              <select value={entropyMeasure} onChange={(event) => setEntropyMeasure(event.target.value)}>
+                <option value="shannon">Shannon</option>
+                <option value="renyi" disabled>Renyi pending</option>
+                <option value="tsallis" disabled>Tsallis pending</option>
+              </select>
             </label>
             <label>
-              Radius
-              <input
-                type="number"
-                value={windowRadius}
-                min={1}
-                max={16}
-                onChange={(event) => setWindowRadius(Number(event.target.value))}
-              />
+              Scope
+              <select value={entropyScope} onChange={(event) => setEntropyScope(event.target.value)}>
+                <option value="local">local</option>
+                <option value="global" disabled>global pending</option>
+                <option value="region" disabled>region pending</option>
+              </select>
             </label>
+            <div className="two-column">
+              <label>
+                Bins
+                <input type="number" value={bins} min={2} max={512} onChange={(event) => setBins(Number(event.target.value))} />
+              </label>
+              <label>
+                Radius
+                <input
+                  type="number"
+                  value={windowRadius}
+                  min={1}
+                  max={16}
+                  onChange={(event) => setWindowRadius(Number(event.target.value))}
+                />
+              </label>
+            </div>
           </div>
 
-          <button className="secondary-action" onClick={() => loadPreview()} disabled={!canUseDataset || apiState !== "online"}>
-            <Image size={18} />
-            <span>Load Sample</span>
-          </button>
+          <div className="setup-stage">
+            <h3>Segmentation</h3>
+            <label>
+              Method
+              <select value={segmentationMethod} onChange={(event) => setSegmentationMethod(event.target.value)}>
+                {segmentationOptions.map((option) => (
+                  <option value={option.value} key={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <div className="readonly-setting">
+              <span>Features</span>
+              <strong>{featureDescription(segmentationMethod)}</strong>
+            </div>
+          </div>
 
-          <button
-            className="primary-action"
-            onClick={runPipeline}
-            disabled={!canUseDataset || isRunning || isComparing || apiState !== "online"}
-          >
-            <Play size={18} />
-            <span>{isRunning ? "Running" : "Run Slice"}</span>
-          </button>
+          <div className="setup-stage run-stage">
+            <h3>Run</h3>
+            <button className="secondary-action" onClick={() => loadPreview()} disabled={!canUseDataset || apiState !== "online"}>
+              <Image size={18} />
+              <span>Load Sample</span>
+            </button>
 
-          <button
-            className="secondary-action"
-            onClick={runComparison}
-            disabled={!canUseDataset || isRunning || isComparing || apiState !== "online"}
-          >
-            <BarChart3 size={18} />
-            <span>{isComparing ? "Comparing" : "Run Comparison"}</span>
-          </button>
+            <button
+              className="primary-action"
+              onClick={runPipeline}
+              disabled={!canUseDataset || isRunning || isComparing || apiState !== "online"}
+            >
+              <Play size={18} />
+              <span>{isRunning ? "Running" : "Run Slice"}</span>
+            </button>
+
+            <button
+              className="secondary-action"
+              onClick={runComparison}
+              disabled={!canUseDataset || isRunning || isComparing || apiState !== "online"}
+            >
+              <BarChart3 size={18} />
+              <span>{isComparing ? "Comparing" : "Run Comparison"}</span>
+            </button>
+          </div>
 
           <div className="run-id-preview">
             <span>Run ID</span>
@@ -1223,6 +1272,30 @@ function App() {
               <div>
                 <dt>Graph edges</dt>
                 <dd>{runResult?.regions?.edge_count ?? "none"}</dd>
+              </div>
+              <div>
+                <dt>Spectral entropy</dt>
+                <dd>{formatMetric(runResult?.graph?.normalized_spectral_entropy)}</dd>
+              </div>
+              <div>
+                <dt>Partitions</dt>
+                <dd>{runResult?.graph?.partition_count ?? "none"}</dd>
+              </div>
+              <div>
+                <dt>Deep model</dt>
+                <dd>{runResult?.deep?.model ?? "none"}</dd>
+              </div>
+              <div>
+                <dt>Activation entropy</dt>
+                <dd>{formatMetric(runResult?.deep?.mean_activation_entropy)}</dd>
+              </div>
+              <div>
+                <dt>Latent entropy</dt>
+                <dd>{formatMetric(runResult?.deep?.latent_entropy)}</dd>
+              </div>
+              <div>
+                <dt>Predictive entropy</dt>
+                <dd>{formatMetric(runResult?.deep?.predictive_entropy)}</dd>
               </div>
             </dl>
           </article>

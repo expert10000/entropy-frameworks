@@ -2,8 +2,11 @@ from pathlib import Path
 
 import numpy as np
 
+from visionentropy.deep import deep_learning_available
+from visionentropy.deep.features import activation_entropy_map
 from visionentropy.entropy import LocalEntropyMap
 from visionentropy.evaluation import binary_metrics
+from visionentropy.graphs import analyze_region_graph
 from visionentropy.pipeline import run_vertical_slice
 from visionentropy.representations import build_region_representation
 from visionentropy.segmentation import (
@@ -81,6 +84,43 @@ def test_region_representation_builds_stats_and_graph() -> None:
     assert {"mean_intensity", "region_entropy", "neighbor_count"}.issubset(regions.stats[0])
 
 
+def test_graph_entropy_framework_analyzes_region_graph() -> None:
+    image = np.zeros((32, 32, 3), dtype=np.float32)
+    image[:16, :] = [1.0, 0.0, 0.0]
+    image[16:, :] = [0.0, 1.0, 0.0]
+    intensity = image.mean(axis=-1)
+    entropy_map = np.zeros((32, 32), dtype=np.float32)
+    entropy_map[:, 12:20] = 0.8
+    regions = build_region_representation(
+        image,
+        intensity=intensity,
+        entropy_map=entropy_map,
+        n_segments=12,
+        entropy_bins=8,
+    )
+
+    graph = analyze_region_graph(regions)
+    payload = graph.payload(regions)
+
+    assert graph.node_entropy.shape == (regions.region_count,)
+    assert graph.edge_entropy.shape == (len(regions.edges),)
+    assert graph.partition_labels.shape == (regions.region_count,)
+    assert graph.normalized_spectral_entropy >= 0.0
+    assert payload["partitionCount"] >= 1
+
+
+def test_activation_entropy_map_matches_feature_spatial_shape() -> None:
+    features = np.zeros((4, 6, 5), dtype=np.float32)
+    features[0] = 1.0
+    features[1, 2:4, 2:4] = 2.0
+
+    entropy = activation_entropy_map(features)
+
+    assert entropy.shape == (6, 5)
+    assert float(entropy.max()) <= 1.0
+    assert float(entropy.min()) >= 0.0
+
+
 def test_classical_segmenters_return_binary_masks() -> None:
     intensity = np.zeros((24, 24), dtype=np.float32)
     intensity[6:18, 6:18] = 1.0
@@ -153,6 +193,8 @@ def test_vertical_slice_writes_expected_outputs(tmp_path: Path) -> None:
     assert result.metadata["run_metadata"]["representation"] == "grayscale"
     assert result.metadata["regions"]["count"] > 1
     assert result.metadata["regions"]["edge_count"] > 0
+    assert result.metadata["graph"]["partition_count"] >= 1
+    assert result.metadata["graph"]["normalized_spectral_entropy"] >= 0.0
     assert result.segmentation.shape == (64, 64)
     assert "dice" in result.metrics
     assert "boundary_f1" in result.metrics
@@ -171,10 +213,17 @@ def test_vertical_slice_writes_expected_outputs(tmp_path: Path) -> None:
     assert (output_directory / "images" / "region_mean.png").exists()
     assert (output_directory / "images" / "region_entropy.png").exists()
     assert (output_directory / "images" / "region_graph.png").exists()
+    assert (output_directory / "images" / "graph_node_entropy.png").exists()
+    assert (output_directory / "images" / "graph_edge_entropy.png").exists()
+    assert (output_directory / "images" / "graph_spectral_entropy.png").exists()
+    assert (output_directory / "images" / "graph_partition.png").exists()
     assert (output_directory / "region_stats.json").exists()
     assert (output_directory / "region_stats.csv").exists()
     assert (output_directory / "region_graph.json").exists()
+    assert (output_directory / "graph_entropy.json").exists()
     assert (output_directory / "data" / "region_labels.npy").exists()
+    assert (output_directory / "data" / "graph_node_entropy.npy").exists()
+    assert (output_directory / "data" / "graph_partition.npy").exists()
     assert (output_directory / "images" / "score_map.png").exists()
     assert (output_directory / "images" / "prediction.png").exists()
 
@@ -213,6 +262,39 @@ def test_vertical_slice_feature_kmeans_writes_feature_outputs(tmp_path: Path) ->
     assert (output_directory / "images" / "superpixel_map.png").exists()
     assert (output_directory / "images" / "score_map.png").exists()
     assert (output_directory / "data" / "feature_stack.npy").exists()
+
+
+def test_vertical_slice_writes_deep_entropy_outputs_when_enabled(tmp_path: Path) -> None:
+    if not deep_learning_available():
+        return
+    output_directory = tmp_path / "deep_run"
+    config = {
+        "experiment": {"name": "test_deep", "output_directory": str(output_directory)},
+        "dataset": {"name": "synthetic_shapes", "sample_index": 0, "image_size": [48, 48]},
+        "preprocessing": {
+            "resize": {"height": 48, "width": 48},
+            "normalization": {"mode": "zero_one"},
+        },
+        "representation": {"name": "grayscale"},
+        "entropy": {"parameters": {"bins": 24, "window_radius": 2}},
+        "segmentation": {"name": "otsu", "parameters": {"bins": 24, "foreground": "high"}},
+        "deep": {"enabled": True, "model": "resnet18", "image_size": 64, "random_state": 0},
+    }
+
+    result = run_vertical_slice(config)
+
+    assert result.metadata["deep"]["available"] is True
+    assert result.metadata["deep"]["model"] == "resnet18"
+    assert result.metadata["deep"]["mean_activation_entropy"] >= 0.0
+    assert (output_directory / "images" / "deep_feature_map.png").exists()
+    assert (output_directory / "images" / "activation_entropy.png").exists()
+    assert (output_directory / "images" / "latent_entropy.png").exists()
+    assert (output_directory / "images" / "predictive_entropy.png").exists()
+    assert (output_directory / "deep_entropy.json").exists()
+    assert (output_directory / "data" / "deep_feature_map.npy").exists()
+    assert (output_directory / "data" / "activation_entropy.npy").exists()
+    assert (output_directory / "data" / "latent_vector.npy").exists()
+    assert (output_directory / "data" / "predictive_logits.npy").exists()
 
 
 def test_vertical_slice_runs_stage_one_classical_methods(tmp_path: Path) -> None:

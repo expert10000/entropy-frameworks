@@ -97,6 +97,8 @@ def test_build_run_config_uses_ui_parameters() -> None:
     assert config["entropy"]["scope"] == "local"
     assert config["entropy"]["parameters"] == {"bins": 32, "window_radius": 3}
     assert config["segmentation"]["name"] == "kapur"
+    assert config["deep"]["enabled"] is True
+    assert config["deep"]["model"] == "resnet18"
     assert config["dataset"]["preset"] == "s02_gaussian_noise"
     assert "synthetic_002_shannon_local_kapur_r3_b32" in config["experiment"]["name"]
 
@@ -166,7 +168,9 @@ def test_run_result_payload_returns_artifact_urls(tmp_path: Path) -> None:
     assert payload["runMetadata"]["entropy"]["radius"] == 2
     assert payload["artifacts"]["entropy_map"].startswith("/api/files")
     assert payload["artifacts"]["region_entropy"].startswith("/api/files")
+    assert payload["artifacts"]["graph_partition"].startswith("/api/files")
     assert payload["regions"]["count"] > 1
+    assert payload["graph"]["partition_count"] >= 1
     assert "dice" in payload["metrics"]
 
 

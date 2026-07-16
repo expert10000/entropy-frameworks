@@ -372,6 +372,12 @@ def build_run_config(payload: dict[str, Any]) -> dict[str, Any]:
                 "random_state": int(payload.get("randomState", 0)),
             },
         },
+        "deep": {
+            "enabled": parse_bool(payload.get("deepEnabled", True)),
+            "model": payload.get("deepModel", "resnet18"),
+            "image_size": int(payload.get("deepImageSize", 128)),
+            "random_state": int(payload.get("randomState", 0)),
+        },
     }
 
 
@@ -509,6 +515,8 @@ def run_result_payload(result: Any) -> dict[str, Any]:
             "clusterCenters": result.metadata.get("cluster_centers"),
         },
         "regions": result.metadata.get("regions"),
+        "graph": result.metadata.get("graph"),
+        "deep": result.metadata.get("deep"),
         "metrics": result.metrics,
         "runtime": result.runtime,
         "artifacts": artifact_urls(result.artifacts),
@@ -607,6 +615,14 @@ def run_directory_payload(root: Path) -> dict[str, Any]:
         "region_mean": str(root / "images/region_mean.png"),
         "region_entropy": str(root / "images/region_entropy.png"),
         "region_graph": str(root / "images/region_graph.png"),
+        "graph_node_entropy": str(root / "images/graph_node_entropy.png"),
+        "graph_edge_entropy": str(root / "images/graph_edge_entropy.png"),
+        "graph_spectral_entropy": str(root / "images/graph_spectral_entropy.png"),
+        "graph_partition": str(root / "images/graph_partition.png"),
+        "deep_feature_map": str(root / "images/deep_feature_map.png"),
+        "activation_entropy": str(root / "images/activation_entropy.png"),
+        "latent_entropy": str(root / "images/latent_entropy.png"),
+        "predictive_entropy": str(root / "images/predictive_entropy.png"),
         "score_map": str(root / "images/score_map.png"),
         "cluster_labels": str(root / "images/cluster_labels.png"),
         "prediction": str(root / "images/prediction.png"),
@@ -618,17 +634,51 @@ def run_directory_payload(root: Path) -> dict[str, Any]:
         "region_stats_json": str(root / "region_stats.json"),
         "region_stats_csv": str(root / "region_stats.csv"),
         "region_graph_json": str(root / "region_graph.json"),
+        "graph_entropy_json": str(root / "graph_entropy.json"),
+        "deep_entropy_json": str(root / "deep_entropy.json"),
     }
     artifacts = {key: value for key, value in artifacts.items() if Path(value).exists()}
     run_metadata = run_metadata_payload(root)
+    graph_payload = graph_summary_payload(root)
+    deep_payload = deep_summary_payload(root)
     return {
         "name": root.name,
         "experiment": root.name,
         "outputDirectory": str(root),
         "updatedAt": metrics_path.stat().st_mtime,
         "runMetadata": run_metadata,
+        "graph": graph_payload,
+        "deep": deep_payload,
         "metrics": json.loads(metrics_path.read_text(encoding="utf-8")),
         "artifacts": artifact_urls(artifacts),
+    }
+
+
+def graph_summary_payload(root: Path) -> dict[str, Any] | None:
+    graph_path = root / "graph_entropy.json"
+    if not graph_path.exists():
+        return None
+    payload = json.loads(graph_path.read_text(encoding="utf-8"))
+    return {
+        "mean_node_entropy": payload.get("meanNodeEntropy"),
+        "mean_edge_entropy": payload.get("meanEdgeEntropy"),
+        "spectral_entropy": payload.get("spectralEntropy"),
+        "normalized_spectral_entropy": payload.get("normalizedSpectralEntropy"),
+        "partition_count": payload.get("partitionCount"),
+    }
+
+
+def deep_summary_payload(root: Path) -> dict[str, Any] | None:
+    deep_path = root / "deep_entropy.json"
+    if not deep_path.exists():
+        return None
+    payload = json.loads(deep_path.read_text(encoding="utf-8"))
+    return {
+        "available": payload.get("available"),
+        "model": payload.get("model"),
+        "mean_activation_entropy": payload.get("meanActivationEntropy"),
+        "latent_entropy": payload.get("latentEntropy"),
+        "predictive_entropy": payload.get("predictiveEntropy"),
     }
 
 
