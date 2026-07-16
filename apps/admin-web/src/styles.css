@@ -410,6 +410,79 @@ button:disabled {
   font-weight: 800;
 }
 
+.evaluation-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 14px;
+}
+
+.secondary-evaluation,
+.confusion-panel {
+  min-height: auto;
+}
+
+.secondary-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(100px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.secondary-metric-grid div {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #d8e0e3;
+  border-radius: 8px;
+  background: #f8fbfb;
+}
+
+.secondary-metric-grid dd {
+  margin: 0;
+  color: #182026;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.confusion-matrix {
+  width: 100%;
+  border-spacing: 0;
+  border: 1px solid #d8e0e3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.confusion-matrix th,
+.confusion-matrix td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #edf2f4;
+  border-right: 1px solid #edf2f4;
+  text-align: center;
+}
+
+.confusion-matrix th {
+  color: #617178;
+  background: #f8fbfb;
+  font-weight: 800;
+}
+
+.confusion-matrix td {
+  color: #182026;
+  font-weight: 850;
+}
+
+.confusion-matrix tr:last-child th,
+.confusion-matrix tr:last-child td {
+  border-bottom: 0;
+}
+
+.confusion-matrix th:last-child,
+.confusion-matrix td:last-child {
+  border-right: 0;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: minmax(320px, 1.4fr) minmax(260px, 0.8fr);
@@ -1167,6 +1240,8 @@ pre {
 
   .status-strip,
   .metrics-grid,
+  .evaluation-grid,
+  .secondary-metric-grid,
   .dataset-grid,
   .comparison-grid,
   .run-history-grid,

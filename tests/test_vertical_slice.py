@@ -56,7 +56,22 @@ def test_binary_metrics_for_perfect_prediction() -> None:
 
     assert metrics["mean_iou"] == 1.0
     assert metrics["dice"] == 1.0
+    assert metrics["boundary_f1"] == 1.0
+    assert metrics["error_detection_auroc"] == 0.5
     assert metrics["pixel_accuracy"] == 1.0
+    assert metrics["specificity"] == 1.0
+    assert metrics["true_positive"] == 2.0
+    assert metrics["true_negative"] == 2.0
+
+
+def test_binary_metrics_scores_error_detection_auroc() -> None:
+    target = np.array([[0, 1], [1, 0]])
+    prediction = np.array([[0, 0], [1, 1]]).astype(bool)
+    score_map = np.array([[0.1, 0.9], [0.1, 0.9]])
+
+    metrics = binary_metrics(prediction, target, score_map=score_map)
+
+    assert metrics["error_detection_auroc"] == 1.0
 
 
 def test_vertical_slice_writes_expected_outputs(tmp_path: Path) -> None:
@@ -81,6 +96,10 @@ def test_vertical_slice_writes_expected_outputs(tmp_path: Path) -> None:
     assert result.metadata["run_metadata"]["representation"] == "grayscale"
     assert result.segmentation.shape == (64, 64)
     assert "dice" in result.metrics
+    assert "boundary_f1" in result.metrics
+    assert "error_detection_auroc" in result.metrics
+    assert "specificity" in result.metrics
+    assert "true_positive" in result.metrics
     assert (output_directory / "metrics.json").exists()
     assert (output_directory / "run_metadata.json").exists()
     assert (output_directory / "images" / "entropy_map.png").exists()

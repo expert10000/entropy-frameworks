@@ -188,7 +188,7 @@ def _variant(
     if target is not None:
         artifacts["error_map"] = str(images_directory / f"{variant_id}_error.png")
         imsave(artifacts["error_map"], _error_map(predicted, target), check_contrast=False)
-        metrics = binary_metrics(predicted, target)
+        metrics = binary_metrics(predicted, target, score_map=score)
     if threshold is not None:
         metrics = {**metrics, "threshold": float(threshold)}
     return {

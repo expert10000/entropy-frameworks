@@ -267,12 +267,35 @@ function App() {
     return [
       { label: "Mean IoU", value: values.mean_iou, fallback: "0.000" },
       { label: "Dice", value: values.dice, fallback: "0.000" },
-      { label: "Pixel accuracy", value: values.pixel_accuracy, fallback: "0.000" },
-      { label: "Precision", value: values.precision, fallback: "0.000" }
+      { label: "Boundary F1", value: values.boundary_f1, fallback: "0.000" },
+      { label: "Error AUROC", value: values.error_detection_auroc, fallback: "0.000" }
     ].map((metric) => ({
       label: metric.label,
       value: metric.value == null ? metric.fallback : metric.value.toFixed(3)
     }));
+  }, [runResult]);
+
+  const secondaryMetrics = useMemo(() => {
+    const values = runResult?.metrics ?? {};
+    return [
+      { label: "Pixel accuracy", value: values.pixel_accuracy },
+      { label: "Precision", value: values.precision },
+      { label: "Recall", value: values.recall },
+      { label: "Specificity", value: values.specificity }
+    ].map((metric) => ({
+      label: metric.label,
+      value: metric.value == null ? "0.000" : metric.value.toFixed(3)
+    }));
+  }, [runResult]);
+
+  const confusion = useMemo(() => {
+    const values = runResult?.metrics ?? {};
+    return {
+      trueNegative: values.true_negative ?? 0,
+      falsePositive: values.false_positive ?? 0,
+      falseNegative: values.false_negative ?? 0,
+      truePositive: values.true_positive ?? 0
+    };
   }, [runResult]);
 
   useEffect(() => {
@@ -742,6 +765,55 @@ function App() {
           ))}
         </section>
 
+        <section className="evaluation-grid">
+          <article className="surface secondary-evaluation">
+            <div className="surface-heading">
+              <BarChart3 size={18} />
+              <h3>Secondary Evaluation</h3>
+            </div>
+            <dl className="secondary-metric-grid">
+              {secondaryMetrics.map((metric) => (
+                <div key={metric.label}>
+                  <dt>{metric.label}</dt>
+                  <dd>{metric.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </article>
+
+          <article className="surface confusion-panel">
+            <div className="surface-heading">
+              <Table2 size={18} />
+              <h3>Confusion Matrix</h3>
+            </div>
+            <table className="confusion-matrix">
+              <thead>
+                <tr>
+                  <th />
+                  <th colSpan={2}>Predicted</th>
+                </tr>
+                <tr>
+                  <th>Actual</th>
+                  <th>Background</th>
+                  <th>Foreground</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th>BG</th>
+                  <td>{formatCount(confusion.trueNegative)}</td>
+                  <td>{formatCount(confusion.falsePositive)}</td>
+                </tr>
+                <tr>
+                  <th>FG</th>
+                  <td>{formatCount(confusion.falseNegative)}</td>
+                  <td>{formatCount(confusion.truePositive)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </article>
+        </section>
+
         <section className="surface dataset-library">
           <div className="surface-heading split">
             <div className="surface-title">
@@ -969,8 +1041,8 @@ function App() {
                     <dd>{formatMetric(run.metrics?.dice)}</dd>
                   </div>
                   <div>
-                    <dt>Accuracy</dt>
-                    <dd>{formatMetric(run.metrics?.pixel_accuracy)}</dd>
+                    <dt>Boundary F1</dt>
+                    <dd>{formatMetric(run.metrics?.boundary_f1)}</dd>
                   </div>
                 </dl>
               </button>
@@ -1256,6 +1328,10 @@ function apiFileUrl(path: string) {
 
 function formatMetric(value?: number) {
   return value == null ? "0.000" : value.toFixed(3);
+}
+
+function formatCount(value?: number) {
+  return value == null ? "0" : Math.round(value).toLocaleString();
 }
 
 function formatRuntime(value?: number | null) {

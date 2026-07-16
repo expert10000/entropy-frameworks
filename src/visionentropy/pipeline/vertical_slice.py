@@ -73,6 +73,7 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
     cluster_centers = None
     foreground_label = None
     foreground_rule = None
+    score_map = entropy_result.map
 
     if segmentation_name in {"feature_kmeans", "boundary_region_kmeans", "kmeans"}:
         grayscale = _grayscale(sample.image)
@@ -93,6 +94,7 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         cluster_centers = cluster_result.centers
         foreground_label = cluster_result.foreground_label
         foreground_rule = cluster_result.foreground_rule
+        score_map = np.mean(feature_stack, axis=-1)
         threshold = None
     else:
         foreground = segmenter_config.get("foreground", "high")
@@ -102,7 +104,7 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
 
     metrics = {}
     if sample.mask is not None:
-        metrics = binary_metrics(segmentation, sample.mask)
+        metrics = binary_metrics(segmentation, sample.mask, score_map=score_map)
 
     artifacts = _save_artifacts(
         output_directory=output_directory,
@@ -119,7 +121,7 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         gradient_map=gradient_map,
         feature_stack=feature_stack,
         cluster_labels=cluster_labels,
-        score_map=np.mean(feature_stack, axis=-1) if feature_stack is not None else entropy_result.map,
+        score_map=score_map,
         started=started,
     )
 
