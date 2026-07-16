@@ -165,6 +165,8 @@ def test_run_result_payload_returns_artifact_urls(tmp_path: Path) -> None:
     assert payload["runMetadata"]["entropy"]["bins"] == 32
     assert payload["runMetadata"]["entropy"]["radius"] == 2
     assert payload["artifacts"]["entropy_map"].startswith("/api/files")
+    assert payload["artifacts"]["region_entropy"].startswith("/api/files")
+    assert payload["regions"]["count"] > 1
     assert "dice" in payload["metrics"]
 
 

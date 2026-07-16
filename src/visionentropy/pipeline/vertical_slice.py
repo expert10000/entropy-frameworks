@@ -28,7 +28,13 @@ from visionentropy.evaluation import binary_metrics
 from visionentropy.pipeline.base import PipelineResult
 from visionentropy.pipeline.metadata import build_run_metadata
 from visionentropy.preprocessing import ComposeTransforms, NormalizeImage, ResizeSample
-from visionentropy.representations import build_representation
+from visionentropy.representations import (
+    RegionRepresentation,
+    build_region_representation,
+    build_representation,
+    region_graph_payload,
+    region_value_image,
+)
 from visionentropy.segmentation import (
     AdaptiveThresholdSegmenter,
     FeatureKMeansSegmenter,
@@ -87,6 +93,12 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
     threshold_curve = False
     grayscale = _grayscale(sample.image)
     gradient_map = filters.sobel(grayscale)
+    region_representation = build_region_representation(
+        sample.image,
+        intensity=grayscale,
+        entropy_map=entropy_result.map,
+        entropy_bins=bins,
+    )
 
     if segmentation_name in {"feature_kmeans", "boundary_region_kmeans", "kmeans"}:
         feature_entropy_map = LocalEntropyMap(window_radius=window_radius, bins=bins).compute(grayscale).map
@@ -209,6 +221,7 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         cluster_labels=cluster_labels,
         score_map=score_map,
         threshold_curve=threshold_curve,
+        region_representation=region_representation,
         started=started,
     )
 
@@ -240,6 +253,10 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
             "cluster_centers": cluster_centers.tolist() if cluster_centers is not None else None,
             "foreground_label": foreground_label,
             "foreground_rule": foreground_rule,
+            "regions": {
+                "count": region_representation.region_count,
+                "edge_count": len(region_representation.edges),
+            },
         },
     )
 
@@ -332,6 +349,7 @@ def _save_artifacts(
     cluster_labels: np.ndarray | None = None,
     score_map: np.ndarray | None = None,
     threshold_curve: bool = False,
+    region_representation: RegionRepresentation | None = None,
 ) -> dict[str, str]:
     config_target = output_directory / "config.yaml"
     if config_path is not None:
@@ -348,6 +366,10 @@ def _save_artifacts(
         "local_variance": str(images_directory / "local_variance.png"),
         "histogram": str(images_directory / "histogram.png"),
         "superpixel_map": str(images_directory / "superpixel_map.png"),
+        "region_labels": str(images_directory / "region_labels.png"),
+        "region_mean": str(images_directory / "region_mean.png"),
+        "region_entropy": str(images_directory / "region_entropy.png"),
+        "region_graph": str(images_directory / "region_graph.png"),
         "score_map": str(images_directory / "score_map.png"),
         "prediction": str(images_directory / "prediction.png"),
         "metrics_json": str(output_directory / "metrics.json"),
@@ -358,6 +380,10 @@ def _save_artifacts(
         "summary": str(output_directory / "summary.md"),
         "prediction_array": str(data_directory / "prediction.npy"),
         "entropy_array": str(data_directory / "entropy_map.npy"),
+        "region_labels_array": str(data_directory / "region_labels.npy"),
+        "region_stats_json": str(output_directory / "region_stats.json"),
+        "region_stats_csv": str(output_directory / "region_stats.csv"),
+        "region_graph_json": str(output_directory / "region_graph.json"),
     }
 
     imsave(artifacts["original_image"], _to_uint8_rgb(sample.image), check_contrast=False)
@@ -367,7 +393,36 @@ def _save_artifacts(
     local_mean, local_variance = _local_statistics(grayscale, radius=_artifact_radius(config))
     imsave(artifacts["local_mean"], _to_viewable_image(local_mean), check_contrast=False)
     imsave(artifacts["local_variance"], _heatmap(local_variance), check_contrast=False)
-    imsave(artifacts["superpixel_map"], _superpixel_map(sample.image), check_contrast=False)
+    if region_representation is None:
+        region_representation = build_region_representation(
+            sample.image,
+            intensity=grayscale,
+            entropy_map=entropy_map,
+            entropy_bins=int(config.get("entropy", {}).get("parameters", {}).get("bins", 32)),
+        )
+    imsave(artifacts["superpixel_map"], _label_image(region_representation.labels), check_contrast=False)
+    imsave(artifacts["region_labels"], _label_image(region_representation.labels), check_contrast=False)
+    imsave(
+        artifacts["region_mean"],
+        _heatmap(region_value_image(region_representation.labels, region_representation.stats, "mean_intensity")),
+        check_contrast=False,
+    )
+    imsave(
+        artifacts["region_entropy"],
+        _heatmap(region_value_image(region_representation.labels, region_representation.stats, "region_entropy")),
+        check_contrast=False,
+    )
+    _save_region_graph(Path(artifacts["region_graph"]), region_representation)
+    np.save(artifacts["region_labels_array"], region_representation.labels.astype(np.int32))
+    Path(artifacts["region_stats_json"]).write_text(
+        json.dumps(region_representation.stats, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    _write_region_stats_csv(Path(artifacts["region_stats_csv"]), region_representation.stats)
+    Path(artifacts["region_graph_json"]).write_text(
+        json.dumps(region_graph_payload(region_representation), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     imsave(artifacts["score_map"], _heatmap(score_map if score_map is not None else entropy_map), check_contrast=False)
     _save_histogram(Path(artifacts["histogram"]), representation_data, threshold=threshold)
     if threshold is not None and threshold_curve:
@@ -435,6 +490,51 @@ def _save_artifacts(
 def _artifact_radius(config: dict[str, Any]) -> int:
     entropy_config = config.get("entropy", {}).get("parameters", {})
     return int(entropy_config.get("window_radius", 4))
+
+
+def _save_region_graph(path: Path, representation: RegionRepresentation) -> None:
+    figure, axis = plt.subplots(figsize=(5.2, 3.8), dpi=130)
+    labels = representation.labels
+    axis.imshow(_label_image(labels), alpha=0.42)
+    centroids = {
+        int(row["label"]): (float(row["centroid_x"]), float(row["centroid_y"]))
+        for row in representation.stats
+    }
+    for source, target in representation.edges:
+        if source not in centroids or target not in centroids:
+            continue
+        source_x, source_y = centroids[source]
+        target_x, target_y = centroids[target]
+        axis.plot([source_x, target_x], [source_y, target_y], color="#182026", linewidth=0.55, alpha=0.32)
+    if centroids:
+        points = np.asarray(list(centroids.values()), dtype=np.float32)
+        axis.scatter(points[:, 0], points[:, 1], s=8, color="#ef476f", alpha=0.9)
+    axis.set_title(f"Region graph: {representation.region_count} nodes / {len(representation.edges)} edges")
+    axis.set_axis_off()
+    figure.tight_layout(pad=0.2)
+    figure.savefig(path)
+    plt.close(figure)
+
+
+def _write_region_stats_csv(path: Path, stats: list[dict[str, float | int]]) -> None:
+    if not stats:
+        path.write_text("", encoding="utf-8")
+        return
+    columns = [
+        "label",
+        "pixel_count",
+        "centroid_y",
+        "centroid_x",
+        "mean_intensity",
+        "std_intensity",
+        "mean_entropy",
+        "region_entropy",
+        "neighbor_count",
+    ]
+    lines = [",".join(columns)]
+    for row in stats:
+        lines.append(",".join(str(row.get(column, "")) for column in columns))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _local_statistics(values: np.ndarray, *, radius: int) -> tuple[np.ndarray, np.ndarray]:

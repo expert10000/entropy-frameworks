@@ -508,6 +508,7 @@ def run_result_payload(result: Any) -> dict[str, Any]:
             "foregroundLabel": result.metadata.get("foreground_label"),
             "clusterCenters": result.metadata.get("cluster_centers"),
         },
+        "regions": result.metadata.get("regions"),
         "metrics": result.metrics,
         "runtime": result.runtime,
         "artifacts": artifact_urls(result.artifacts),
@@ -602,6 +603,10 @@ def run_directory_payload(root: Path) -> dict[str, Any]:
         "histogram": str(root / "images/histogram.png"),
         "threshold_curve": str(root / "images/threshold_curve.png"),
         "superpixel_map": str(root / "images/superpixel_map.png"),
+        "region_labels": str(root / "images/region_labels.png"),
+        "region_mean": str(root / "images/region_mean.png"),
+        "region_entropy": str(root / "images/region_entropy.png"),
+        "region_graph": str(root / "images/region_graph.png"),
         "score_map": str(root / "images/score_map.png"),
         "cluster_labels": str(root / "images/cluster_labels.png"),
         "prediction": str(root / "images/prediction.png"),
@@ -610,6 +615,9 @@ def run_directory_payload(root: Path) -> dict[str, Any]:
         "summary": str(root / "summary.md"),
         "metrics_json": str(metrics_path),
         "run_metadata": str(root / "run_metadata.json"),
+        "region_stats_json": str(root / "region_stats.json"),
+        "region_stats_csv": str(root / "region_stats.csv"),
+        "region_graph_json": str(root / "region_graph.json"),
     }
     artifacts = {key: value for key, value in artifacts.items() if Path(value).exists()}
     run_metadata = run_metadata_payload(root)

@@ -5,6 +5,7 @@ import numpy as np
 from visionentropy.entropy import LocalEntropyMap
 from visionentropy.evaluation import binary_metrics
 from visionentropy.pipeline import run_vertical_slice
+from visionentropy.representations import build_region_representation
 from visionentropy.segmentation import (
     AdaptiveThresholdSegmenter,
     FeatureKMeansSegmenter,
@@ -56,6 +57,28 @@ def test_feature_kmeans_segmenter_uses_mask_overlap_for_eval_label() -> None:
     assert result.prediction.shape == target.shape
     assert result.foreground_rule == "mask_overlap_eval"
     assert result.prediction.dtype == bool
+
+
+def test_region_representation_builds_stats_and_graph() -> None:
+    image = np.zeros((32, 32, 3), dtype=np.float32)
+    image[:16, :16] = [1.0, 0.0, 0.0]
+    image[16:, 16:] = [0.0, 1.0, 0.0]
+    intensity = image.mean(axis=-1)
+    entropy_map = np.zeros((32, 32), dtype=np.float32)
+    entropy_map[8:24, 8:24] = 1.0
+
+    regions = build_region_representation(
+        image,
+        intensity=intensity,
+        entropy_map=entropy_map,
+        n_segments=12,
+        entropy_bins=8,
+    )
+
+    assert regions.labels.shape == intensity.shape
+    assert regions.region_count > 1
+    assert len(regions.edges) > 0
+    assert {"mean_intensity", "region_entropy", "neighbor_count"}.issubset(regions.stats[0])
 
 
 def test_classical_segmenters_return_binary_masks() -> None:
@@ -128,6 +151,8 @@ def test_vertical_slice_writes_expected_outputs(tmp_path: Path) -> None:
     assert result.metadata["run_metadata"]["dataset"] == "synthetic_shapes"
     assert result.metadata["run_metadata"]["sample"] == 0
     assert result.metadata["run_metadata"]["representation"] == "grayscale"
+    assert result.metadata["regions"]["count"] > 1
+    assert result.metadata["regions"]["edge_count"] > 0
     assert result.segmentation.shape == (64, 64)
     assert "dice" in result.metrics
     assert "boundary_f1" in result.metrics
@@ -142,6 +167,14 @@ def test_vertical_slice_writes_expected_outputs(tmp_path: Path) -> None:
     assert (output_directory / "images" / "histogram.png").exists()
     assert (output_directory / "images" / "threshold_curve.png").exists()
     assert (output_directory / "images" / "superpixel_map.png").exists()
+    assert (output_directory / "images" / "region_labels.png").exists()
+    assert (output_directory / "images" / "region_mean.png").exists()
+    assert (output_directory / "images" / "region_entropy.png").exists()
+    assert (output_directory / "images" / "region_graph.png").exists()
+    assert (output_directory / "region_stats.json").exists()
+    assert (output_directory / "region_stats.csv").exists()
+    assert (output_directory / "region_graph.json").exists()
+    assert (output_directory / "data" / "region_labels.npy").exists()
     assert (output_directory / "images" / "score_map.png").exists()
     assert (output_directory / "images" / "prediction.png").exists()
 

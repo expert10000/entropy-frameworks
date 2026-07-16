@@ -8,6 +8,12 @@ from visionentropy.representations.color_spaces import (
     RGBRepresentation,
 )
 from visionentropy.representations.registry import build_representation
+from visionentropy.representations.regions import (
+    RegionRepresentation,
+    build_region_representation,
+    region_graph_payload,
+    region_value_image,
+)
 
 __all__ = [
     "ColorChannelRepresentation",
@@ -16,5 +22,9 @@ __all__ = [
     "LabRepresentation",
     "RGBRepresentation",
     "RepresentationResult",
+    "RegionRepresentation",
     "build_representation",
+    "build_region_representation",
+    "region_graph_payload",
+    "region_value_image",
 ]

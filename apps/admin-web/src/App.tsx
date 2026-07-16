@@ -90,6 +90,10 @@ type RunPayload = {
     foregroundLabel?: number | null;
     clusterCenters?: number[][] | null;
   };
+  regions?: {
+    count?: number;
+    edge_count?: number;
+  };
   metrics?: Record<string, number>;
   runtime?: Record<string, number>;
   artifacts?: Record<string, string>;
@@ -221,6 +225,10 @@ const artifactOrder = [
   ["histogram", "Histogram"],
   ["threshold_curve", "Threshold curve"],
   ["superpixel_map", "Superpixels"],
+  ["region_labels", "Region labels"],
+  ["region_mean", "Region mean"],
+  ["region_entropy", "Region entropy"],
+  ["region_graph", "Region graph"],
   ["score_map", "Score map"],
   ["cluster_labels", "Clusters"],
   ["prediction", "Prediction"],
@@ -1207,6 +1215,14 @@ function App() {
               <div>
                 <dt>Foreground rule</dt>
                 <dd>{runResult?.features?.foregroundRule ?? "none"}</dd>
+              </div>
+              <div>
+                <dt>Regions</dt>
+                <dd>{runResult?.regions?.count ?? "none"}</dd>
+              </div>
+              <div>
+                <dt>Graph edges</dt>
+                <dd>{runResult?.regions?.edge_count ?? "none"}</dd>
               </div>
             </dl>
           </article>
