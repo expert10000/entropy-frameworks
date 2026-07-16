@@ -228,6 +228,21 @@ const artifactOrder = [
   ["error_map", "Error map"]
 ];
 
+const segmentationOptions = [
+  { value: "otsu", label: "Otsu threshold" },
+  { value: "kapur", label: "Kapur maximum entropy" },
+  { value: "local_adaptive", label: "Adaptive threshold" },
+  { value: "feature_kmeans", label: "Feature stack KMeans" },
+  { value: "gaussian_mixture", label: "Gaussian mixture" },
+  { value: "random_forest", label: "Random Forest" },
+  { value: "watershed", label: "Watershed" },
+  { value: "region_growing", label: "Region growing" }
+];
+
+const featureStackMethods = new Set(["feature_kmeans", "gaussian_mixture", "random_forest"]);
+const maskOverlapMethods = new Set(["feature_kmeans", "gaussian_mixture"]);
+const regionMethods = new Set(["watershed", "region_growing"]);
+
 function App() {
   const [apiState, setApiState] = useState<ApiState>("checking");
   const [datasets, setDatasets] = useState<DatasetStatus[]>([]);
@@ -649,11 +664,9 @@ function App() {
           <label>
             Segmentation method
             <select value={segmentationMethod} onChange={(event) => setSegmentationMethod(event.target.value)}>
-              <option value="feature_kmeans">Feature stack KMeans</option>
-              <option value="kapur">Kapur maximum entropy</option>
-              <option value="otsu" disabled>Otsu threshold pending</option>
-              <option value="local_adaptive" disabled>Local adaptive pending</option>
-              <option value="entropy_intensity" disabled>Entropy + intensity pending</option>
+              {segmentationOptions.map((option) => (
+                <option value={option.value} key={option.value}>{option.label}</option>
+              ))}
             </select>
           </label>
 
@@ -942,7 +955,7 @@ function App() {
               </div>
               <div>
                 <dt>Segmenter</dt>
-                <dd>{segmentationMethod === "feature_kmeans" ? "feature KMeans" : segmentationMethod}</dd>
+                <dd>{segmentationLabel(segmentationMethod)}</dd>
               </div>
               <div>
                 <dt>Preset</dt>
@@ -950,7 +963,7 @@ function App() {
               </div>
               <div>
                 <dt>Feature stack</dt>
-                <dd>{segmentationMethod === "feature_kmeans" ? "I + entropy + gradient" : "entropy map"}</dd>
+                <dd>{featureDescription(segmentationMethod)}</dd>
               </div>
             </dl>
           </article>
@@ -1219,9 +1232,9 @@ entropy:
   window_radius: ${windowRadius}
 segmentation:
   name: ${segmentationMethod}
-  foreground: ${segmentationMethod === "feature_kmeans" ? "mask_overlap_eval" : "high"}
+  foreground: ${foregroundDescription(segmentationMethod)}
 features:
-  ${segmentationMethod === "feature_kmeans" ? "[grayscale, local_entropy, gradient_magnitude]" : "entropy_map"}
+  ${featureDescription(segmentationMethod)}
 run_id:
   ${runIdPreview}_<timestamp>`}</pre>
           </article>
@@ -1347,9 +1360,29 @@ function formatEntropy(run: RunPayload) {
 function formatSegmentation(run: RunPayload) {
   const name = run.runMetadata?.segmentation?.name;
   if (!name) return "unknown";
-  if (name === "feature_kmeans") return "intensity + entropy k-means";
-  if (name === "kapur" || name === "maximum_entropy_threshold") return "Kapur entropy threshold";
+  return segmentationLabel(name);
+}
+
+function segmentationLabel(name: string) {
+  const match = segmentationOptions.find((option) => option.value === name);
+  if (match) return match.label;
+  if (name === "maximum_entropy_threshold") return "Kapur maximum entropy";
+  if (name === "gmm") return "Gaussian mixture";
+  if (name === "rf") return "Random Forest";
   return name.replace(/_/g, " ");
+}
+
+function featureDescription(method: string) {
+  if (featureStackMethods.has(method)) return "[grayscale, local_entropy, gradient_magnitude]";
+  if (regionMethods.has(method)) return "grayscale + gradient/region labels";
+  if (method === "kapur" || method === "maximum_entropy_threshold") return "entropy_map";
+  return "grayscale intensity";
+}
+
+function foregroundDescription(method: string) {
+  if (maskOverlapMethods.has(method)) return "mask_overlap_eval";
+  if (method === "random_forest") return "mask_supervised_train";
+  return "high";
 }
 
 function formatRunSubtitle(run: RunPayload) {

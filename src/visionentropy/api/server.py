@@ -365,7 +365,9 @@ def build_run_config(payload: dict[str, Any]) -> dict[str, Any]:
                 "bins": bins,
                 "foreground": payload.get(
                     "foreground",
-                    "mask_overlap" if segmentation_method in {"feature_kmeans", "kmeans"} else "high",
+                    "mask_overlap"
+                    if segmentation_method in {"feature_kmeans", "kmeans", "gaussian_mixture", "gmm"}
+                    else "high",
                 ),
                 "random_state": int(payload.get("randomState", 0)),
             },

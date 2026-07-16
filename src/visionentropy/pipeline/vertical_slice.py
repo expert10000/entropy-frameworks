@@ -29,7 +29,17 @@ from visionentropy.pipeline.base import PipelineResult
 from visionentropy.pipeline.metadata import build_run_metadata
 from visionentropy.preprocessing import ComposeTransforms, NormalizeImage, ResizeSample
 from visionentropy.representations import build_representation
-from visionentropy.segmentation import FeatureKMeansSegmenter, MaximumEntropySegmenter, maximum_entropy_threshold
+from visionentropy.segmentation import (
+    AdaptiveThresholdSegmenter,
+    FeatureKMeansSegmenter,
+    GaussianMixtureSegmenter,
+    MaximumEntropySegmenter,
+    OtsuSegmenter,
+    RandomForestSegmenter,
+    RegionGrowingSegmenter,
+    WatershedSegmenter,
+    maximum_entropy_threshold,
+)
 
 matplotlib.use("Agg")
 from matplotlib import colormaps  # noqa: E402
@@ -74,11 +84,12 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
     foreground_label = None
     foreground_rule = None
     score_map = entropy_result.map
+    threshold_curve = False
+    grayscale = _grayscale(sample.image)
+    gradient_map = filters.sobel(grayscale)
 
     if segmentation_name in {"feature_kmeans", "boundary_region_kmeans", "kmeans"}:
-        grayscale = _grayscale(sample.image)
         feature_entropy_map = LocalEntropyMap(window_radius=window_radius, bins=bins).compute(grayscale).map
-        gradient_map = filters.sobel(grayscale)
         feature_stack = _boundary_region_features(
             grayscale=grayscale,
             entropy_map=feature_entropy_map,
@@ -96,11 +107,86 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         foreground_rule = cluster_result.foreground_rule
         score_map = np.mean(feature_stack, axis=-1)
         threshold = None
+    elif segmentation_name in {"gaussian_mixture", "gmm"}:
+        feature_entropy_map = LocalEntropyMap(window_radius=window_radius, bins=bins).compute(grayscale).map
+        feature_stack = _boundary_region_features(
+            grayscale=grayscale,
+            entropy_map=feature_entropy_map,
+            gradient_map=gradient_map,
+        )
+        segmenter = GaussianMixtureSegmenter(
+            foreground=segmenter_config.get("foreground", "mask_overlap"),
+            random_state=int(segmenter_config.get("random_state", 0)),
+        )
+        segment_result = segmenter.segment(feature_stack, target=sample.mask)
+        segmentation = segment_result.prediction
+        cluster_labels = segment_result.labels
+        cluster_centers = segment_result.centers
+        foreground_label = segment_result.foreground_label
+        foreground_rule = segment_result.foreground_rule
+        score_map = segment_result.score_map
+        threshold = None
+    elif segmentation_name in {"random_forest", "rf"}:
+        feature_entropy_map = LocalEntropyMap(window_radius=window_radius, bins=bins).compute(grayscale).map
+        feature_stack = _boundary_region_features(
+            grayscale=grayscale,
+            entropy_map=feature_entropy_map,
+            gradient_map=gradient_map,
+        )
+        segmenter = RandomForestSegmenter(random_state=int(segmenter_config.get("random_state", 0)))
+        segment_result = segmenter.segment(feature_stack, target=sample.mask)
+        segmentation = segment_result.prediction
+        foreground_label = segment_result.foreground_label
+        foreground_rule = segment_result.foreground_rule
+        score_map = segment_result.score_map
+        threshold = None
+    elif segmentation_name in {"otsu", "threshold_otsu"}:
+        segmenter = OtsuSegmenter(foreground=segmenter_config.get("foreground", "high"))
+        segment_result = segmenter.segment(grayscale)
+        segmentation = segment_result.prediction
+        foreground_rule = segment_result.foreground_rule
+        score_map = segment_result.score_map
+        threshold = segment_result.threshold
+    elif segmentation_name in {"local_adaptive", "adaptive_threshold"}:
+        segmenter = AdaptiveThresholdSegmenter(
+            window_radius=window_radius,
+            foreground=segmenter_config.get("foreground", "high"),
+        )
+        segment_result = segmenter.segment(grayscale)
+        segmentation = segment_result.prediction
+        foreground_rule = segment_result.foreground_rule
+        score_map = segment_result.score_map
+        threshold = segment_result.threshold
+    elif segmentation_name == "watershed":
+        segmenter = WatershedSegmenter(foreground=segmenter_config.get("foreground", "high"))
+        segment_result = segmenter.segment(grayscale, gradient_map=gradient_map)
+        segmentation = segment_result.prediction
+        cluster_labels = segment_result.labels
+        foreground_label = segment_result.foreground_label
+        foreground_rule = segment_result.foreground_rule
+        score_map = segment_result.score_map
+        threshold = segment_result.threshold
+    elif segmentation_name == "region_growing":
+        tolerance_value = segmenter_config.get("tolerance")
+        tolerance = float(tolerance_value) if tolerance_value not in {None, ""} else None
+        segmenter = RegionGrowingSegmenter(
+            tolerance=tolerance,
+            foreground=segmenter_config.get("foreground", "high"),
+        )
+        segment_result = segmenter.segment(grayscale)
+        segmentation = segment_result.prediction
+        cluster_labels = segment_result.labels
+        foreground_label = segment_result.foreground_label
+        foreground_rule = segment_result.foreground_rule
+        score_map = segment_result.score_map
+        threshold = segment_result.threshold
     else:
         foreground = segmenter_config.get("foreground", "high")
         segmenter = MaximumEntropySegmenter(bins=threshold_bins, foreground=foreground)
         segmentation = segmenter.segment(entropy_result.map)
         threshold = maximum_entropy_threshold(entropy_result.map, bins=threshold_bins)
+        foreground_rule = f"{foreground}_entropy"
+        threshold_curve = True
 
     metrics = {}
     if sample.mask is not None:
@@ -122,6 +208,7 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         feature_stack=feature_stack,
         cluster_labels=cluster_labels,
         score_map=score_map,
+        threshold_curve=threshold_curve,
         started=started,
     )
 
@@ -244,6 +331,7 @@ def _save_artifacts(
     feature_stack: np.ndarray | None = None,
     cluster_labels: np.ndarray | None = None,
     score_map: np.ndarray | None = None,
+    threshold_curve: bool = False,
 ) -> dict[str, str]:
     config_target = output_directory / "config.yaml"
     if config_path is not None:
@@ -282,7 +370,7 @@ def _save_artifacts(
     imsave(artifacts["superpixel_map"], _superpixel_map(sample.image), check_contrast=False)
     imsave(artifacts["score_map"], _heatmap(score_map if score_map is not None else entropy_map), check_contrast=False)
     _save_histogram(Path(artifacts["histogram"]), representation_data, threshold=threshold)
-    if threshold is not None:
+    if threshold is not None and threshold_curve:
         artifacts["threshold_curve"] = str(images_directory / "threshold_curve.png")
         _save_threshold_curve(Path(artifacts["threshold_curve"]), entropy_map, threshold=threshold)
     imsave(artifacts["prediction"], (segmentation.astype(np.uint8) * 255), check_contrast=False)

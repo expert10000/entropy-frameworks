@@ -5,7 +5,17 @@ import numpy as np
 from visionentropy.entropy import LocalEntropyMap
 from visionentropy.evaluation import binary_metrics
 from visionentropy.pipeline import run_vertical_slice
-from visionentropy.segmentation import FeatureKMeansSegmenter, MaximumEntropySegmenter, maximum_entropy_threshold
+from visionentropy.segmentation import (
+    AdaptiveThresholdSegmenter,
+    FeatureKMeansSegmenter,
+    GaussianMixtureSegmenter,
+    MaximumEntropySegmenter,
+    OtsuSegmenter,
+    RandomForestSegmenter,
+    RegionGrowingSegmenter,
+    WatershedSegmenter,
+    maximum_entropy_threshold,
+)
 
 
 def test_local_entropy_map_matches_image_shape() -> None:
@@ -46,6 +56,30 @@ def test_feature_kmeans_segmenter_uses_mask_overlap_for_eval_label() -> None:
     assert result.prediction.shape == target.shape
     assert result.foreground_rule == "mask_overlap_eval"
     assert result.prediction.dtype == bool
+
+
+def test_classical_segmenters_return_binary_masks() -> None:
+    intensity = np.zeros((24, 24), dtype=np.float32)
+    intensity[6:18, 6:18] = 1.0
+    entropy = np.zeros_like(intensity)
+    gradient = np.zeros_like(intensity)
+    gradient[5:19, 5:19] = 0.4
+    features = np.stack([intensity, entropy, gradient], axis=-1)
+    target = intensity > 0
+
+    results = [
+        OtsuSegmenter().segment(intensity),
+        AdaptiveThresholdSegmenter(window_radius=2).segment(intensity),
+        GaussianMixtureSegmenter(random_state=0).segment(features, target=target),
+        RandomForestSegmenter(n_estimators=12, random_state=0).segment(features, target=target),
+        WatershedSegmenter().segment(intensity, gradient_map=gradient),
+        RegionGrowingSegmenter(tolerance=0.2).segment(intensity),
+    ]
+
+    for result in results:
+        assert result.prediction.shape == intensity.shape
+        assert result.prediction.dtype == bool
+        assert result.score_map.shape == intensity.shape
 
 
 def test_binary_metrics_for_perfect_prediction() -> None:
@@ -146,3 +180,44 @@ def test_vertical_slice_feature_kmeans_writes_feature_outputs(tmp_path: Path) ->
     assert (output_directory / "images" / "superpixel_map.png").exists()
     assert (output_directory / "images" / "score_map.png").exists()
     assert (output_directory / "data" / "feature_stack.npy").exists()
+
+
+def test_vertical_slice_runs_stage_one_classical_methods(tmp_path: Path) -> None:
+    methods = [
+        "otsu",
+        "local_adaptive",
+        "gaussian_mixture",
+        "random_forest",
+        "watershed",
+        "region_growing",
+    ]
+
+    for method in methods:
+        output_directory = tmp_path / method
+        config = {
+            "experiment": {"name": f"test_{method}", "output_directory": str(output_directory)},
+            "dataset": {
+                "name": "synthetic_shapes",
+                "sample_index": 0,
+                "image_size": [48, 48],
+                "preset": "s01_clean_high_contrast",
+            },
+            "preprocessing": {
+                "resize": {"height": 48, "width": 48},
+                "normalization": {"mode": "zero_one"},
+            },
+            "representation": {"name": "grayscale"},
+            "entropy": {"parameters": {"bins": 24, "window_radius": 2}},
+            "segmentation": {
+                "name": method,
+                "parameters": {"bins": 24, "foreground": "mask_overlap", "random_state": 0},
+            },
+        }
+
+        result = run_vertical_slice(config)
+
+        assert result.segmentation.shape == (48, 48)
+        assert result.metadata["segmentation_method"] == method
+        assert "mean_iou" in result.metrics
+        assert (output_directory / "images" / "prediction.png").exists()
+        assert (output_directory / "images" / "score_map.png").exists()
