@@ -109,6 +109,7 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
         deep_result = analyze_deep_features(
             sample.image,
             model_name=deep_config.get("model", "resnet18"),
+            layer_name=deep_config.get("layer", "layer4"),
             image_size=int(deep_config.get("image_size", 128)),
             random_state=int(deep_config.get("random_state", 0)),
         )
@@ -556,6 +557,7 @@ def _deep_summary(deep_result: DeepEntropyResult) -> dict[str, Any]:
     return {
         "available": deep_result.available,
         "model": deep_result.model_name,
+        "layer": deep_result.layer_name,
         "mean_activation_entropy": deep_result.mean_activation_entropy,
         "latent_entropy": deep_result.latent_entropy,
         "predictive_entropy": deep_result.predictive_entropy,

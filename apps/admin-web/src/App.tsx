@@ -104,6 +104,11 @@ type RunPayload = {
   deep?: {
     available?: boolean;
     model?: string;
+    layer?: string;
+    feature_shape?: number[];
+    latent_size?: number;
+    class_count?: number;
+    top_probabilities?: Array<{ index: number; probability: number }>;
     mean_activation_entropy?: number;
     latent_entropy?: number;
     predictive_entropy?: number;
@@ -137,6 +142,7 @@ type ComparisonPayload = {
 
 type ApiState = "checking" | "online" | "offline";
 type ResultMode = "single" | "compare" | "overlay";
+type WorkspaceView = "experiments" | "deep";
 
 const pipelineStages = [
   "Dataset",
@@ -146,6 +152,37 @@ const pipelineStages = [
   "Segmentation",
   "Evaluation",
   "Report"
+];
+
+const deepPipelineStages = [
+  "Image",
+  "CNN / ResNet",
+  "Selected layer",
+  "Feature representation",
+  "Uncertainty representation",
+  "Entropy calculation",
+  "Evaluation"
+];
+
+const deepModelOptions = [
+  { value: "small_cnn", label: "Small CNN", layers: ["stem", "layer1", "layer2", "avgpool", "logits"] },
+  { value: "resnet18", label: "ResNet-18", layers: ["stem", "layer1", "layer2", "layer3", "layer4", "avgpool", "logits"] },
+  { value: "resnet34", label: "ResNet-34", layers: ["stem", "layer1", "layer2", "layer3", "layer4", "avgpool", "logits"] }
+];
+
+const featureRepresentationOptions = [
+  { value: "pixel_embedding", label: "Pixel embedding", basis: "z_xy from C x H x W feature maps" },
+  { value: "patch_embedding", label: "Patch embedding", basis: "local neighborhoods over feature cells" },
+  { value: "superpixel_embedding", label: "Superpixel embedding", basis: "region-pooled CNN descriptors" },
+  { value: "image_embedding", label: "Image embedding", basis: "avgpool latent vector" }
+];
+
+const uncertaintyMethodOptions = [
+  { value: "classical", label: "Classical", output: "activation, latent, predictive entropy" },
+  { value: "fuzzy", label: "Fuzzy", output: "membership entropy over feature similarity" },
+  { value: "rough", label: "Rough", output: "lower / upper approximation uncertainty" },
+  { value: "fuzzy_rough", label: "Fuzzy-rough", output: "rough neighborhoods weighted by fuzzy relation" },
+  { value: "predictive", label: "Predictive", output: "softmax distribution entropy" }
 ];
 
 const representationCatalog = [
@@ -304,6 +341,12 @@ function App() {
   const [statusText, setStatusText] = useState("Starting up");
   const [isRunning, setIsRunning] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
+  const [activeView, setActiveView] = useState<WorkspaceView>("experiments");
+  const [deepModel, setDeepModel] = useState("resnet18");
+  const [deepLayer, setDeepLayer] = useState("layer4");
+  const [deepRepresentationLevel, setDeepRepresentationLevel] = useState("pixel_embedding");
+  const [deepUncertaintyMethod, setDeepUncertaintyMethod] = useState("classical");
+  const [deepImageSize, setDeepImageSize] = useState(128);
   const [selectedArtifact, setSelectedArtifact] = useState("entropy_map");
   const [resultMode, setResultMode] = useState<ResultMode>("compare");
 
@@ -414,6 +457,12 @@ function App() {
           width,
           bins,
           windowRadius,
+          deepEnabled: true,
+          deepModel,
+          deepLayer,
+          deepRepresentationLevel,
+          deepUncertaintyMethod,
+          deepImageSize,
           synthetic: syntheticPayload()
         })
       });
@@ -466,6 +515,45 @@ function App() {
         synthetic: syntheticPayload()
       })
     });
+  }
+
+  async function runDeepPipeline() {
+    setIsRunning(true);
+    setStatusText("Running deep entropy slice");
+    try {
+      const payload = await apiFetch<RunPayload>("/api/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataset,
+          sampleIndex,
+          representation,
+          entropyMeasure,
+          entropyScope,
+          segmentationMethod,
+          height,
+          width,
+          bins,
+          windowRadius,
+          deepEnabled: true,
+          deepModel,
+          deepLayer,
+          deepRepresentationLevel,
+          deepUncertaintyMethod,
+          deepImageSize,
+          synthetic: syntheticPayload()
+        })
+      });
+      setRunResult(payload);
+      const history = await apiFetch<{ runs: RunPayload[] }>("/api/runs");
+      setRunHistory(history.runs);
+      setSelectedArtifact(payload.artifacts?.activation_entropy ? "activation_entropy" : "deep_feature_map");
+      setStatusText(`Deep entropy run complete: ${payload.experiment}`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : "Deep entropy run failed");
+    } finally {
+      setIsRunning(false);
+    }
   }
 
   function syntheticPayload() {
@@ -538,7 +626,11 @@ function App() {
         </div>
 
         <nav className="nav-list" aria-label="Primary">
-          <button className="nav-item active" title="Experiments">
+          <button
+            className={activeView === "experiments" ? "nav-item active" : "nav-item"}
+            title="Experiments"
+            onClick={() => setActiveView("experiments")}
+          >
             <FlaskConical size={18} />
             <span>Experiments</span>
           </button>
@@ -549,6 +641,14 @@ function App() {
           <button className="nav-item" title="Representations">
             <Boxes size={18} />
             <span>Representations</span>
+          </button>
+          <button
+            className={activeView === "deep" ? "nav-item active" : "nav-item"}
+            title="Deep Entropy"
+            onClick={() => setActiveView("deep")}
+          >
+            <Layers size={18} />
+            <span>Deep Entropy</span>
           </button>
           <button className="nav-item" title="Region graphs">
             <Network size={18} />
@@ -805,6 +905,30 @@ function App() {
       </aside>
 
       <section className="workspace">
+        {activeView === "deep" ? (
+          <DeepEntropyModule
+            apiState={apiState}
+            runResult={runResult}
+            resultArtifacts={resultArtifacts}
+            isRunning={isRunning}
+            deepModel={deepModel}
+            deepLayer={deepLayer}
+            deepRepresentationLevel={deepRepresentationLevel}
+            deepUncertaintyMethod={deepUncertaintyMethod}
+            deepImageSize={deepImageSize}
+            onDeepModelChange={(model) => {
+              setDeepModel(model);
+              const firstLayer = deepModelOptions.find((option) => option.value === model)?.layers[0];
+              if (firstLayer) setDeepLayer(firstLayer);
+            }}
+            onDeepLayerChange={setDeepLayer}
+            onDeepRepresentationLevelChange={setDeepRepresentationLevel}
+            onDeepUncertaintyMethodChange={setDeepUncertaintyMethod}
+            onDeepImageSizeChange={setDeepImageSize}
+            onRunDeep={runDeepPipeline}
+          />
+        ) : (
+          <>
         <header className="topbar">
           <div>
             <p className="eyebrow">VE-0.1 Classical Vertical Slice</p>
@@ -1328,8 +1452,277 @@ run_id:
   ${runIdPreview}_<timestamp>`}</pre>
           </article>
         </section>
+          </>
+        )}
       </section>
     </main>
+  );
+}
+
+function DeepEntropyModule({
+  apiState,
+  runResult,
+  resultArtifacts,
+  isRunning,
+  deepModel,
+  deepLayer,
+  deepRepresentationLevel,
+  deepUncertaintyMethod,
+  deepImageSize,
+  onDeepModelChange,
+  onDeepLayerChange,
+  onDeepRepresentationLevelChange,
+  onDeepUncertaintyMethodChange,
+  onDeepImageSizeChange,
+  onRunDeep
+}: {
+  apiState: ApiState;
+  runResult: RunPayload | null;
+  resultArtifacts: Record<string, string>;
+  isRunning: boolean;
+  deepModel: string;
+  deepLayer: string;
+  deepRepresentationLevel: string;
+  deepUncertaintyMethod: string;
+  deepImageSize: number;
+  onDeepModelChange: (value: string) => void;
+  onDeepLayerChange: (value: string) => void;
+  onDeepRepresentationLevelChange: (value: string) => void;
+  onDeepUncertaintyMethodChange: (value: string) => void;
+  onDeepImageSizeChange: (value: number) => void;
+  onRunDeep: () => void;
+}) {
+  const deep = runResult?.deep;
+  const model = deepModelOptions.find((option) => option.value === deepModel) ?? deepModelOptions[1];
+  const representationOption =
+    featureRepresentationOptions.find((option) => option.value === deepRepresentationLevel) ??
+    featureRepresentationOptions[0];
+  const methodOption =
+    uncertaintyMethodOptions.find((option) => option.value === deepUncertaintyMethod) ??
+    uncertaintyMethodOptions[0];
+  const deepMetrics = [
+    { label: "Activation entropy", value: deep?.mean_activation_entropy },
+    { label: "Latent entropy", value: deep?.latent_entropy },
+    { label: "Predictive entropy", value: deep?.predictive_entropy },
+    { label: "Classes", value: deep?.class_count, count: true }
+  ];
+
+  return (
+    <>
+      <header className="topbar">
+        <div>
+          <p className="eyebrow">Deep Representations</p>
+          <h2>Deep Entropy</h2>
+        </div>
+        <span className={deep?.available ? "status-pill ready" : "status-pill missing"}>
+          {deep?.available ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+          {deep?.available ? "Deep outputs ready" : "Deep outputs pending"}
+        </span>
+      </header>
+
+      <section className="deep-control-grid">
+        <article className="surface deep-run-panel">
+          <div className="surface-heading split">
+            <div className="surface-title">
+              <Layers size={18} />
+              <h3>Feature Extraction</h3>
+            </div>
+            <button
+              className="primary-action compact-primary"
+              onClick={onRunDeep}
+              disabled={apiState !== "online" || isRunning}
+            >
+              <Play size={17} />
+              <span>{isRunning ? "Running" : "Run Deep Slice"}</span>
+            </button>
+          </div>
+
+          <div className="deep-control-fields">
+            <label>
+              Model
+              <select value={deepModel} onChange={(event) => onDeepModelChange(event.target.value)}>
+                {deepModelOptions.map((option) => (
+                  <option value={option.value} key={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Selected layer
+              <select value={deepLayer} onChange={(event) => onDeepLayerChange(event.target.value)}>
+                {model.layers.map((layer) => (
+                  <option value={layer} key={layer}>{layer}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Feature representation
+              <select
+                value={deepRepresentationLevel}
+                onChange={(event) => onDeepRepresentationLevelChange(event.target.value)}
+              >
+                {featureRepresentationOptions.map((option) => (
+                  <option value={option.value} key={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Uncertainty method
+              <select
+                value={deepUncertaintyMethod}
+                onChange={(event) => onDeepUncertaintyMethodChange(event.target.value)}
+              >
+                {uncertaintyMethodOptions.map((option) => (
+                  <option value={option.value} key={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Image size
+              <input
+                type="number"
+                value={deepImageSize}
+                min={48}
+                max={512}
+                step={16}
+                onChange={(event) => onDeepImageSizeChange(Number(event.target.value))}
+              />
+            </label>
+          </div>
+        </article>
+
+        <article className="surface deep-summary-panel">
+          <div className="surface-heading">
+            <Activity size={18} />
+            <h3>Current Tensor</h3>
+          </div>
+          <dl className="parameter-list">
+            <div>
+              <dt>Model</dt>
+              <dd>{deep?.model ?? deepModel}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{deep?.layer ?? deepLayer}</dd>
+            </div>
+            <div>
+              <dt>Feature tensor</dt>
+              <dd>{formatDimensions(deep?.feature_shape)}</dd>
+            </div>
+            <div>
+              <dt>Embedding</dt>
+              <dd>{deep?.latent_size ?? "pending"}</dd>
+            </div>
+            <div>
+              <dt>Basis</dt>
+              <dd>{representationOption.label}</dd>
+            </div>
+            <div>
+              <dt>Method</dt>
+              <dd>{methodOption.label}</dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+
+      <section className="status-strip deep-status-strip">
+        {deepPipelineStages.map((stage, index) => (
+          <div className="stage" key={stage}>
+            <span className={deep?.available || index < 4 ? "stage-dot complete" : "stage-dot"} />
+            <span>{stage}</span>
+          </div>
+        ))}
+      </section>
+
+      <section className="deep-artifact-grid">
+        <article className="surface large">
+          <div className="surface-heading">
+            <Image size={18} />
+            <h3>Deep Feature Maps</h3>
+          </div>
+          <div className="artifact-board">
+            <ImagePanel title="Feature map" src={resultArtifacts.deep_feature_map} />
+            <ImagePanel title="Activation entropy" src={resultArtifacts.activation_entropy} />
+          </div>
+        </article>
+
+        <article className="surface">
+          <div className="surface-heading">
+            <BarChart3 size={18} />
+            <h3>Entropy Scores</h3>
+          </div>
+          <dl className="secondary-metric-grid deep-metric-grid">
+            {deepMetrics.map((metric) => (
+              <div key={metric.label}>
+                <dt>{metric.label}</dt>
+                <dd>{metric.count ? formatCount(metric.value) : formatMetric(metric.value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </article>
+
+        <article className="surface">
+          <div className="surface-heading">
+            <Boxes size={18} />
+            <h3>Embeddings</h3>
+          </div>
+          <div className="mini-artifacts">
+            <ImagePanel title="Latent entropy" src={resultArtifacts.latent_entropy} />
+            <ImagePanel title="Predictive entropy" src={resultArtifacts.predictive_entropy} />
+          </div>
+        </article>
+      </section>
+
+      <section className="deep-method-grid">
+        {uncertaintyMethodOptions.map((option) => (
+          <article
+            className={option.value === deepUncertaintyMethod ? "method-card active" : "method-card"}
+            key={option.value}
+          >
+            <strong>{option.label}</strong>
+            <span>{option.output}</span>
+          </article>
+        ))}
+      </section>
+
+      <section className="content-grid">
+        <article className="surface">
+          <div className="surface-heading">
+            <Network size={18} />
+            <h3>Representation Pipeline</h3>
+          </div>
+          <div className="deep-flow">
+            <div>Image</div>
+            <div>{model.label}</div>
+            <div>{deepLayer}</div>
+            <div>{representationOption.label}</div>
+            <div>{methodOption.label}</div>
+            <div>Evaluation</div>
+          </div>
+        </article>
+
+        <article className="surface">
+          <div className="surface-heading">
+            <Table2 size={18} />
+            <h3>Predictive Distribution</h3>
+          </div>
+          <div className="probability-list">
+            {(deep?.top_probabilities ?? []).map((item) => (
+              <div key={item.index}>
+                <span>class {item.index}</span>
+                <meter min={0} max={1} value={item.probability} />
+                <strong>{formatProbability(item.probability)}</strong>
+              </div>
+            ))}
+            {(deep?.top_probabilities ?? []).length === 0 && (
+              <div className="empty-comparison">
+                <BarChart3 size={22} />
+                <span>No predictive distribution yet</span>
+              </div>
+            )}
+          </div>
+        </article>
+      </section>
+    </>
   );
 }
 
@@ -1434,6 +1827,14 @@ function formatMetric(value?: number) {
 
 function formatCount(value?: number) {
   return value == null ? "0" : Math.round(value).toLocaleString();
+}
+
+function formatDimensions(value?: number[]) {
+  return value && value.length > 0 ? value.join(" x ") : "pending";
+}
+
+function formatProbability(value?: number) {
+  return value == null ? "0.0%" : `${(value * 100).toFixed(1)}%`;
 }
 
 function formatRuntime(value?: number | null) {

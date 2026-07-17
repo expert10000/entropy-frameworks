@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 @dataclass(frozen=True)
 class DeepEntropyResult:
     model_name: str
+    layer_name: str
     feature_map: NDArray[np.float32]
     activation_entropy: NDArray[np.float32]
     latent_vector: NDArray[np.float32]
@@ -26,6 +27,7 @@ class DeepEntropyResult:
             "available": self.available,
             "message": self.message,
             "model": self.model_name,
+            "layer": self.layer_name,
             "featureShape": list(self.feature_map.shape),
             "latentSize": int(self.latent_vector.size),
             "classCount": int(self.predictive_probabilities.size),
@@ -52,36 +54,41 @@ def analyze_deep_features(
     image: NDArray[np.generic],
     *,
     model_name: str = "resnet18",
+    layer_name: str = "layer4",
     image_size: int = 224,
     random_state: int = 0,
 ) -> DeepEntropyResult:
     try:
         import torch
-        from torchvision.models import resnet18
     except Exception as error:  # noqa: BLE001 - optional deep stack.
-        return _unavailable_result(model_name=model_name, message=str(error))
-
-    if model_name != "resnet18":
-        raise ValueError("Stage 4 currently supports model_name='resnet18'")
+        return _unavailable_result(model_name=model_name, layer_name=layer_name, message=str(error))
 
     torch.manual_seed(random_state)
-    model = resnet18(weights=None)
-    model.eval()
-
     tensor = _image_tensor(image, image_size=image_size, torch=torch)
-    with torch.no_grad():
-        x = model.conv1(tensor)
-        x = model.bn1(x)
-        x = model.relu(x)
-        x = model.maxpool(x)
-        x = model.layer1(x)
-        x = model.layer2(x)
-        x = model.layer3(x)
-        feature_tensor = model.layer4(x)
-        pooled = model.avgpool(feature_tensor)
-        latent_tensor = torch.flatten(pooled, 1)
-        logits_tensor = model.fc(latent_tensor)
-        probabilities_tensor = torch.softmax(logits_tensor, dim=1)
+    if model_name == "small_cnn":
+        feature_tensor, latent_tensor, logits_tensor = _small_cnn_forward(
+            tensor,
+            layer_name=layer_name,
+            torch=torch,
+        )
+    elif model_name in {"resnet18", "resnet34"}:
+        try:
+            from torchvision.models import resnet18, resnet34
+        except Exception as error:  # noqa: BLE001 - optional deep stack.
+            return _unavailable_result(model_name=model_name, layer_name=layer_name, message=str(error))
+        builder = resnet18 if model_name == "resnet18" else resnet34
+        model = builder(weights=None)
+        model.eval()
+        feature_tensor, latent_tensor, logits_tensor = _resnet_forward(
+            model,
+            tensor,
+            layer_name=layer_name,
+            torch=torch,
+        )
+    else:
+        raise ValueError("Deep entropy supports model_name in {'small_cnn', 'resnet18', 'resnet34'}")
+
+    probabilities_tensor = torch.softmax(logits_tensor, dim=1)
 
     feature_map = feature_tensor.detach().cpu().numpy()[0].astype(np.float32)
     latent_vector = latent_tensor.detach().cpu().numpy()[0].astype(np.float32)
@@ -90,6 +97,7 @@ def analyze_deep_features(
     activation_entropy = activation_entropy_map(feature_map)
     return DeepEntropyResult(
         model_name=model_name,
+        layer_name=layer_name,
         feature_map=feature_map,
         activation_entropy=activation_entropy,
         latent_vector=latent_vector,
@@ -157,11 +165,64 @@ def _image_tensor(image: NDArray[np.generic], *, image_size: int, torch: Any) ->
     return (tensor - mean) / std
 
 
-def _unavailable_result(*, model_name: str, message: str) -> DeepEntropyResult:
+def _resnet_forward(model: Any, tensor: Any, *, layer_name: str, torch: Any) -> tuple[Any, Any, Any]:
+    with torch.no_grad():
+        x = model.conv1(tensor)
+        x = model.bn1(x)
+        x = model.relu(x)
+        captures = {"stem": x}
+        x = model.maxpool(x)
+        x = model.layer1(x)
+        captures["layer1"] = x
+        x = model.layer2(x)
+        captures["layer2"] = x
+        x = model.layer3(x)
+        captures["layer3"] = x
+        x = model.layer4(x)
+        captures["layer4"] = x
+        pooled = model.avgpool(x)
+        latent = torch.flatten(pooled, 1)
+        logits = model.fc(latent)
+        captures["avgpool"] = pooled
+        captures["logits"] = logits.unsqueeze(-1).unsqueeze(-1)
+    if layer_name not in captures:
+        raise ValueError("ResNet layer must be one of stem, layer1, layer2, layer3, layer4, avgpool, logits")
+    return captures[layer_name], latent, logits
+
+
+def _small_cnn_forward(tensor: Any, *, layer_name: str, torch: Any) -> tuple[Any, Any, Any]:
+    nn = torch.nn
+    stem = nn.Sequential(nn.Conv2d(3, 16, kernel_size=3, padding=1), nn.ReLU(), nn.MaxPool2d(2))
+    layer1 = nn.Sequential(nn.Conv2d(16, 32, kernel_size=3, padding=1), nn.ReLU(), nn.MaxPool2d(2))
+    layer2 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, padding=1), nn.ReLU())
+    avgpool = nn.AdaptiveAvgPool2d((1, 1))
+    classifier = nn.Linear(64, 8)
+    modules = [stem, layer1, layer2, avgpool, classifier]
+    for module in modules:
+        module.eval()
+    with torch.no_grad():
+        x = stem(tensor)
+        captures = {"stem": x}
+        x = layer1(x)
+        captures["layer1"] = x
+        x = layer2(x)
+        captures["layer2"] = x
+        pooled = avgpool(x)
+        latent = torch.flatten(pooled, 1)
+        logits = classifier(latent)
+        captures["avgpool"] = pooled
+        captures["logits"] = logits.unsqueeze(-1).unsqueeze(-1)
+    if layer_name not in captures:
+        raise ValueError("Small CNN layer must be one of stem, layer1, layer2, avgpool, logits")
+    return captures[layer_name], latent, logits
+
+
+def _unavailable_result(*, model_name: str, layer_name: str, message: str) -> DeepEntropyResult:
     empty_feature = np.zeros((0, 0, 0), dtype=np.float32)
     empty_vector = np.zeros(0, dtype=np.float32)
     return DeepEntropyResult(
         model_name=model_name,
+        layer_name=layer_name,
         feature_map=empty_feature,
         activation_entropy=np.zeros((0, 0), dtype=np.float32),
         latent_vector=empty_vector,

@@ -22,6 +22,7 @@ outputs/runs/*
 outputs/figures/*
 outputs/tables/*
 outputs/reports/*
+outputs/logs/*
 
 !data/raw/.gitkeep
 !data/processed/.gitkeep

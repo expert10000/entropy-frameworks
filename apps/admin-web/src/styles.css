@@ -279,6 +279,12 @@ input {
   font-weight: 750;
 }
 
+.primary-action.compact-primary {
+  width: auto;
+  min-width: 152px;
+  padding: 0 14px;
+}
+
 .secondary-action {
   display: flex;
   align-items: center;
@@ -1279,6 +1285,119 @@ pre {
   max-height: 156px;
 }
 
+.deep-control-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.35fr) minmax(300px, 0.65fr);
+  gap: 14px;
+}
+
+.deep-run-panel,
+.deep-summary-panel {
+  min-height: auto;
+}
+
+.deep-control-fields {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.deep-status-strip {
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+}
+
+.deep-artifact-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.25fr) minmax(260px, 0.75fr);
+  gap: 14px;
+}
+
+.deep-artifact-grid .surface.large {
+  grid-row: span 2;
+}
+
+.deep-metric-grid {
+  grid-template-columns: repeat(2, minmax(110px, 1fr));
+}
+
+.deep-method-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.method-card {
+  display: grid;
+  gap: 7px;
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid #d8e0e3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.method-card.active {
+  border-color: #1f7a8c;
+  background: #eaf4f6;
+}
+
+.method-card strong {
+  color: #182026;
+  font-size: 14px;
+}
+
+.method-card span {
+  color: #617178;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.deep-flow {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.deep-flow div {
+  display: grid;
+  place-items: center;
+  min-height: 64px;
+  padding: 8px;
+  color: #243239;
+  border: 1px solid #d8e0e3;
+  border-radius: 8px;
+  background: #f8fbfb;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.probability-list {
+  display: grid;
+  gap: 9px;
+}
+
+.probability-list div:not(.empty-comparison) {
+  display: grid;
+  grid-template-columns: 72px 1fr 54px;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+}
+
+.probability-list span,
+.probability-list strong {
+  color: #243239;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.probability-list meter {
+  width: 100%;
+  height: 12px;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -1305,7 +1424,13 @@ pre {
   .artifact-board,
   .mini-artifacts,
   .parameter-list.compact-list,
-  .image-comparison {
+  .image-comparison,
+  .deep-control-grid,
+  .deep-control-fields,
+  .deep-status-strip,
+  .deep-artifact-grid,
+  .deep-method-grid,
+  .deep-flow {
     grid-template-columns: 1fr;
   }
 

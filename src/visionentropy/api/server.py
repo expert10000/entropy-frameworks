@@ -375,6 +375,9 @@ def build_run_config(payload: dict[str, Any]) -> dict[str, Any]:
         "deep": {
             "enabled": parse_bool(payload.get("deepEnabled", True)),
             "model": payload.get("deepModel", "resnet18"),
+            "layer": payload.get("deepLayer", "layer4"),
+            "uncertainty_method": payload.get("deepUncertaintyMethod", "classical"),
+            "representation_level": payload.get("deepRepresentationLevel", "pixel_embedding"),
             "image_size": int(payload.get("deepImageSize", 128)),
             "random_state": int(payload.get("randomState", 0)),
         },
@@ -676,6 +679,11 @@ def deep_summary_payload(root: Path) -> dict[str, Any] | None:
     return {
         "available": payload.get("available"),
         "model": payload.get("model"),
+        "layer": payload.get("layer"),
+        "feature_shape": payload.get("featureShape"),
+        "latent_size": payload.get("latentSize"),
+        "class_count": payload.get("classCount"),
+        "top_probabilities": payload.get("topProbabilities"),
         "mean_activation_entropy": payload.get("meanActivationEntropy"),
         "latent_entropy": payload.get("latentEntropy"),
         "predictive_entropy": payload.get("predictiveEntropy"),
