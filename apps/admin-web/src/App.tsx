@@ -852,6 +852,22 @@ function App() {
             </div>
           </div>
 
+          <div className="setup-stage">
+            <h3>Deep Entropy</h3>
+            <div className="readonly-setting">
+              <span>Backbone</span>
+              <strong>ResNet-18</strong>
+            </div>
+            <div className="readonly-setting">
+              <span>Layer</span>
+              <strong>layer4 + avgpool + logits</strong>
+            </div>
+            <div className="readonly-setting">
+              <span>Outputs</span>
+              <strong>features, activation, latent, predictive</strong>
+            </div>
+          </div>
+
           <div className="setup-stage run-stage">
             <h3>Run</h3>
             <button className="secondary-action" onClick={() => loadPreview()} disabled={!canUseDataset || apiState !== "online"}>
@@ -1448,6 +1464,10 @@ segmentation:
   foreground: ${foregroundDescription(segmentationMethod)}
 features:
   ${featureDescription(segmentationMethod)}
+deep:
+  backbone: resnet18
+  layer: layer4
+  outputs: [deep_feature_map, activation_entropy, latent_entropy, predictive_entropy]
 run_id:
   ${runIdPreview}_<timestamp>`}</pre>
           </article>

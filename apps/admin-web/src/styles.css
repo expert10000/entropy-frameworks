@@ -570,7 +570,10 @@ button:disabled {
 }
 
 .run-history {
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: auto;
+  max-height: min(620px, 68vh);
+  overflow: hidden;
 }
 
 .baseline-comparison {
@@ -588,7 +591,22 @@ button:disabled {
 .run-history-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(260px, 1fr));
+  align-content: start;
   gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-color: #b8cfd6 transparent;
+  scrollbar-width: thin;
+}
+
+.run-history-grid::-webkit-scrollbar {
+  width: 8px;
+}
+
+.run-history-grid::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #b8cfd6;
 }
 
 .run-card {
