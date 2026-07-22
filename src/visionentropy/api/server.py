@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import threading
 import time
 import uuid
@@ -29,6 +30,10 @@ DEFAULT_PORT = 8765
 JOB_REGISTRY = None
 
 
+class JobCancelledError(RuntimeError):
+    """Raised inside a worker when a local API job is cancelled."""
+
+
 @dataclass
 class ApiJob:
     id: str
@@ -43,6 +48,8 @@ class ApiJob:
     finished_at: float | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    cancel_requested: bool = False
+    timeline: list[dict[str, Any]] = field(default_factory=list)
 
     def payload(self) -> dict[str, Any]:
         now = self.finished_at or time.time()
@@ -60,6 +67,17 @@ class ApiJob:
             "elapsedSeconds": round(max(0.0, now - self.started_at), 3),
             "result": self.result,
             "error": self.error,
+            "cancelRequested": self.cancel_requested,
+            "timeline": [
+                {
+                    **entry,
+                    "durationSeconds": round(
+                        max(0.0, (entry.get("finishedAt") or now) - entry["startedAt"]),
+                        3,
+                    ),
+                }
+                for entry in self.timeline
+            ],
         }
 
 
@@ -81,7 +99,25 @@ class ApiJobRegistry:
             job = self._jobs.get(job_id)
             if job is None:
                 raise KeyError(job_id)
-            return ApiJob(**job.__dict__)
+            return ApiJob(**copy.deepcopy(job.__dict__))
+
+    def cancel(self, job_id: str) -> ApiJob:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            if job.state in {"complete", "error", "cancelled"}:
+                return ApiJob(**copy.deepcopy(job.__dict__))
+            job.cancel_requested = True
+            job.state = "cancelling"
+            job.stage = "Cancelling"
+            job.updated_at = time.time()
+            return ApiJob(**copy.deepcopy(job.__dict__))
+
+    def is_cancelled(self, job_id: str) -> bool:
+        with self._lock:
+            job = self._jobs[job_id]
+            return job.cancel_requested
 
     def _run(
         self,
@@ -91,6 +127,8 @@ class ApiJobRegistry:
         self.update(job_id, state="running", stage="Starting", percent=1.0)
 
         def progress(stage: str, stage_index: int, total_stages: int, percent: float) -> None:
+            if self.is_cancelled(job_id):
+                raise JobCancelledError("Job cancelled")
             self.update(
                 job_id,
                 stage=stage,
@@ -98,9 +136,13 @@ class ApiJobRegistry:
                 total_stages=max(1, total_stages),
                 percent=max(0.0, min(99.0, percent)),
             )
+            if self.is_cancelled(job_id):
+                raise JobCancelledError("Job cancelled")
 
         try:
             result = task(progress)
+            if self.is_cancelled(job_id):
+                raise JobCancelledError("Job cancelled")
             self.update(
                 job_id,
                 state="complete",
@@ -110,6 +152,15 @@ class ApiJobRegistry:
                 percent=100.0,
                 finished_at=time.time(),
                 result=result,
+            )
+        except JobCancelledError as error:
+            self.update(
+                job_id,
+                state="cancelled",
+                stage="Cancelled",
+                percent=100.0,
+                finished_at=time.time(),
+                error=str(error),
             )
         except Exception as error:  # noqa: BLE001 - report job errors to the local dashboard.
             self.update(
@@ -124,9 +175,24 @@ class ApiJobRegistry:
     def update(self, job_id: str, **updates: Any) -> None:
         with self._lock:
             job = self._jobs[job_id]
+            now = time.time()
+            next_stage = updates.get("stage")
+            next_stage_index = updates.get("stage_index", job.stage_index)
+            next_percent = updates.get("percent", job.percent)
+            if next_stage and (not job.timeline or job.timeline[-1]["stage"] != next_stage):
+                if job.timeline and job.timeline[-1].get("finishedAt") is None:
+                    job.timeline[-1]["finishedAt"] = now
+                job.timeline.append(
+                    {
+                        "stage": next_stage,
+                        "stageIndex": next_stage_index,
+                        "percent": round(float(next_percent), 2),
+                        "startedAt": now,
+                    }
+                )
             for key, value in updates.items():
                 setattr(job, key, value)
-            job.updated_at = time.time()
+            job.updated_at = now
 
 
 def job_registry() -> ApiJobRegistry:
@@ -207,6 +273,10 @@ class VisionEntropyApiHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/jobs/comparisons":
                 payload = self._read_json()
                 self._send_json(start_comparison_job(payload), status=HTTPStatus.ACCEPTED)
+                return
+            if parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/cancel"):
+                job_id = parsed.path.split("/")[-2]
+                self._send_json(cancel_job_payload(job_id))
                 return
             if parsed.path == "/api/comparisons":
                 payload = self._read_json()
@@ -585,6 +655,13 @@ def start_comparison_job(payload: dict[str, Any]) -> dict[str, Any]:
 def job_status_payload(job_id: str) -> dict[str, Any]:
     try:
         return job_registry().get(job_id).payload()
+    except KeyError as error:
+        raise ValueError(f"Unknown job: {job_id}") from error
+
+
+def cancel_job_payload(job_id: str) -> dict[str, Any]:
+    try:
+        return job_registry().cancel(job_id).payload()
     except KeyError as error:
         raise ValueError(f"Unknown job: {job_id}") from error
 

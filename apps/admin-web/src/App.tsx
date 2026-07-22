@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Settings2,
   SlidersHorizontal,
+  XCircle,
   Table2,
   UploadCloud
 } from "lucide-react";
@@ -158,7 +159,7 @@ type ActiveRunState = {
 type JobStatusPayload = {
   jobId: string;
   kind: ActiveRunKind;
-  state: "queued" | "running" | "complete" | "error";
+  state: "queued" | "running" | "cancelling" | "cancelled" | "complete" | "error";
   stage: string;
   stageIndex: number;
   totalStages: number;
@@ -169,6 +170,15 @@ type JobStatusPayload = {
   elapsedSeconds: number;
   result?: RunPayload | ComparisonPayload | null;
   error?: string | null;
+  cancelRequested?: boolean;
+  timeline?: Array<{
+    stage: string;
+    stageIndex: number;
+    percent: number;
+    startedAt: number;
+    finishedAt?: number | null;
+    durationSeconds: number;
+  }>;
 };
 type RunProgressModel = {
   label: string;
@@ -399,6 +409,8 @@ function App() {
   const [isComparing, setIsComparing] = useState(false);
   const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
   const [activeJob, setActiveJob] = useState<JobStatusPayload | null>(null);
+  const [lastJob, setLastJob] = useState<JobStatusPayload | null>(null);
+  const [isJobDetailsOpen, setIsJobDetailsOpen] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [activeView, setActiveView] = useState<WorkspaceView>("experiments");
   const [deepModel, setDeepModel] = useState("resnet18");
@@ -518,6 +530,7 @@ function App() {
   async function runPipeline() {
     setIsRunning(true);
     setActiveRun({ kind: "slice", startedAt: Date.now() });
+    setIsJobDetailsOpen(false);
     setStatusText("Running vertical slice");
     try {
       const payload = await requestRunJob("slice");
@@ -548,6 +561,7 @@ function App() {
   async function runComparison() {
     setIsComparing(true);
     setActiveRun({ kind: "comparison", startedAt: Date.now() });
+    setIsJobDetailsOpen(false);
     setStatusText("Running baseline comparison");
     try {
       const payload = await requestComparison();
@@ -582,6 +596,7 @@ function App() {
   async function runDeepPipeline() {
     setIsRunning(true);
     setActiveRun({ kind: "deep", startedAt: Date.now() });
+    setIsJobDetailsOpen(false);
     setStatusText("Running deep entropy slice");
     try {
       const payload = await requestRunJob("deep");
@@ -632,11 +647,17 @@ function App() {
   async function pollJob<T>(initialJob: JobStatusPayload): Promise<T> {
     let job = initialJob;
     setActiveJob(job);
-    while (job.state === "queued" || job.state === "running") {
+    setLastJob(job);
+    while (job.state === "queued" || job.state === "running" || job.state === "cancelling") {
       await delay(350);
       job = await apiFetch<JobStatusPayload>(`/api/jobs/${job.jobId}`);
       setActiveJob(job);
+      setLastJob(job);
       setStatusText(job.stage);
+    }
+    setLastJob(job);
+    if (job.state === "cancelled") {
+      throw new Error("Job cancelled");
     }
     if (job.state === "error") {
       throw new Error(job.error ?? "Job failed");
@@ -645,6 +666,20 @@ function App() {
       throw new Error("Job completed without a result");
     }
     return job.result as T;
+  }
+
+  async function cancelActiveJob() {
+    if (!activeJob || activeJob.state === "cancelling") return;
+    try {
+      const job = await apiFetch<JobStatusPayload>(`/api/jobs/${activeJob.jobId}/cancel`, {
+        method: "POST"
+      });
+      setActiveJob(job);
+      setLastJob(job);
+      setStatusText("Cancelling job");
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : "Cancel failed");
+    }
   }
 
   function syntheticPayload() {
@@ -984,7 +1019,14 @@ function App() {
               <span>{isComparing ? "Comparing" : "Run Comparison"}</span>
             </button>
 
-            <RunProgressPanel progress={activeProgress} compact />
+            <RunProgressPanel
+              progress={activeProgress}
+              compact
+              canCancel={Boolean(activeJob && ["queued", "running"].includes(activeJob.state))}
+              isCancelling={activeJob?.state === "cancelling"}
+              onCancel={cancelActiveJob}
+              onOpenDetails={() => setIsJobDetailsOpen(true)}
+            />
           </div>
 
           <div className="run-id-preview">
@@ -1006,6 +1048,10 @@ function App() {
             <RefreshCw size={17} />
             <span>Refresh</span>
           </button>
+          <button className="secondary-action" onClick={() => setIsJobDetailsOpen(true)} disabled={!lastJob}>
+            <Table2 size={17} />
+            <span>Job Details</span>
+          </button>
           <button className="secondary-action">
             <UploadCloud size={17} />
             <span>Attach Dataset</span>
@@ -1021,6 +1067,7 @@ function App() {
             resultArtifacts={resultArtifacts}
             isRunning={isRunning}
             activeProgress={activeProgress}
+            activeJob={activeJob}
             deepModel={deepModel}
             deepLayer={deepLayer}
             deepRepresentationLevel={deepRepresentationLevel}
@@ -1040,6 +1087,8 @@ function App() {
             onDeepNeighborhoodKChange={setDeepNeighborhoodK}
             onDeepSimilaritySigmaChange={setDeepSimilaritySigma}
             onRunDeep={runDeepPipeline}
+            onCancelJob={cancelActiveJob}
+            onOpenJobDetails={() => setIsJobDetailsOpen(true)}
           />
         ) : (
           <>
@@ -1576,11 +1625,36 @@ run_id:
           </>
         )}
       </section>
+
+      <JobDetailsDrawer
+        job={lastJob}
+        fallbackRun={runResult}
+        fallbackComparison={comparisonResult}
+        open={isJobDetailsOpen}
+        onClose={() => setIsJobDetailsOpen(false)}
+        canCancel={Boolean(activeJob && ["queued", "running"].includes(activeJob.state))}
+        isCancelling={activeJob?.state === "cancelling"}
+        onCancel={cancelActiveJob}
+      />
     </main>
   );
 }
 
-function RunProgressPanel({ progress, compact = false }: { progress: RunProgressModel | null; compact?: boolean }) {
+function RunProgressPanel({
+  progress,
+  compact = false,
+  canCancel = false,
+  isCancelling = false,
+  onCancel,
+  onOpenDetails
+}: {
+  progress: RunProgressModel | null;
+  compact?: boolean;
+  canCancel?: boolean;
+  isCancelling?: boolean;
+  onCancel?: () => void;
+  onOpenDetails?: () => void;
+}) {
   if (!progress) return null;
 
   return (
@@ -1598,6 +1672,21 @@ function RunProgressPanel({ progress, compact = false }: { progress: RunProgress
       <div className="run-progress-meta">
         <span>{Math.round(progress.percent)}%</span>
         <span>{compact ? "Waiting for API" : "API will mark complete when artifacts are saved"}</span>
+      </div>
+      <div className="run-progress-actions">
+        <button className="secondary-action compact" onClick={onOpenDetails} type="button">
+          <Table2 size={15} />
+          <span>Details</span>
+        </button>
+        <button
+          className="secondary-action compact danger"
+          onClick={onCancel}
+          disabled={!canCancel || isCancelling}
+          type="button"
+        >
+          <XCircle size={15} />
+          <span>{isCancelling ? "Cancelling" : "Cancel"}</span>
+        </button>
       </div>
       {!compact && (
         <div className="run-progress-stages">
@@ -1621,12 +1710,148 @@ function RunProgressPanel({ progress, compact = false }: { progress: RunProgress
   );
 }
 
+function JobDetailsDrawer({
+  job,
+  fallbackRun,
+  fallbackComparison,
+  open,
+  onClose,
+  canCancel = false,
+  isCancelling = false,
+  onCancel
+}: {
+  job: JobStatusPayload | null;
+  fallbackRun: RunPayload | null;
+  fallbackComparison: ComparisonPayload | null;
+  open: boolean;
+  onClose: () => void;
+  canCancel?: boolean;
+  isCancelling?: boolean;
+  onCancel?: () => void;
+}) {
+  if (!open) return null;
+  const result = job?.result ?? (job?.kind === "comparison" ? fallbackComparison : fallbackRun);
+  const outputDirectory = result && "outputDirectory" in result ? result.outputDirectory : undefined;
+  const runtimeSeconds = result?.runtime?.duration_seconds;
+  const timeline = job?.timeline ?? [];
+
+  return (
+    <>
+      <div className="drawer-backdrop" onClick={onClose} />
+      <aside className="job-drawer" aria-label="Run details">
+        <div className="drawer-heading">
+          <div>
+            <p className="eyebrow">Job Details</p>
+            <h2>{job ? jobLabel(job) : "No job selected"}</h2>
+          </div>
+          <button className="icon-action" onClick={onClose} type="button" title="Close details">
+            <XCircle size={18} />
+          </button>
+        </div>
+
+        {job ? (
+          <>
+            <div className="drawer-actions">
+              <button
+                className="secondary-action danger"
+                onClick={onCancel}
+                disabled={!canCancel || isCancelling}
+                type="button"
+              >
+                <XCircle size={16} />
+                <span>{isCancelling ? "Cancelling" : "Cancel Job"}</span>
+              </button>
+            </div>
+
+            <dl className="drawer-grid">
+              <div>
+                <dt>State</dt>
+                <dd>{job.state}</dd>
+              </div>
+              <div>
+                <dt>Stage</dt>
+                <dd>{job.stage}</dd>
+              </div>
+              <div>
+                <dt>Progress</dt>
+                <dd>{Math.round(job.percent)}%</dd>
+              </div>
+              <div>
+                <dt>Elapsed</dt>
+                <dd>{formatElapsed(job.elapsedSeconds)}</dd>
+              </div>
+              <div>
+                <dt>Started</dt>
+                <dd>{formatTimestamp(job.startedAt)}</dd>
+              </div>
+              <div>
+                <dt>Updated</dt>
+                <dd>{formatTimestamp(job.updatedAt)}</dd>
+              </div>
+            </dl>
+
+            {job.error && (
+              <div className={job.state === "cancelled" ? "drawer-note" : "drawer-note error"}>
+                {job.error}
+              </div>
+            )}
+
+            <section className="drawer-section">
+              <h3>Output</h3>
+              <dl className="drawer-list">
+                <div>
+                  <dt>Experiment</dt>
+                  <dd>{result?.experiment ?? "pending"}</dd>
+                </div>
+                <div>
+                  <dt>Folder</dt>
+                  <dd>{outputDirectory ?? "pending"}</dd>
+                </div>
+                <div>
+                  <dt>Runtime</dt>
+                  <dd>{formatRuntime(runtimeSeconds)}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="drawer-section">
+              <h3>Timeline</h3>
+              <div className="job-timeline">
+                {timeline.length > 0 ? (
+                  timeline.map((entry) => (
+                    <div key={`${entry.stage}-${entry.startedAt}`}>
+                      <span />
+                      <strong>{entry.stage}</strong>
+                      <em>{Math.round(entry.percent)}%</em>
+                      <time>{formatRuntime(entry.durationSeconds)}</time>
+                    </div>
+                  ))
+                ) : (
+                  <p>No stages recorded yet</p>
+                )}
+              </div>
+            </section>
+
+            <section className="drawer-section">
+              <h3>Run Metadata</h3>
+              <pre>{formatJobMetadata(result)}</pre>
+            </section>
+          </>
+        ) : (
+          <div className="drawer-note">Start a run to see job status and timing here.</div>
+        )}
+      </aside>
+    </>
+  );
+}
+
 function DeepEntropyModule({
   apiState,
   runResult,
   resultArtifacts,
   isRunning,
   activeProgress,
+  activeJob,
   deepModel,
   deepLayer,
   deepRepresentationLevel,
@@ -1641,13 +1866,16 @@ function DeepEntropyModule({
   onDeepImageSizeChange,
   onDeepNeighborhoodKChange,
   onDeepSimilaritySigmaChange,
-  onRunDeep
+  onRunDeep,
+  onCancelJob,
+  onOpenJobDetails
 }: {
   apiState: ApiState;
   runResult: RunPayload | null;
   resultArtifacts: Record<string, string>;
   isRunning: boolean;
   activeProgress: RunProgressModel | null;
+  activeJob: JobStatusPayload | null;
   deepModel: string;
   deepLayer: string;
   deepRepresentationLevel: string;
@@ -1663,6 +1891,8 @@ function DeepEntropyModule({
   onDeepNeighborhoodKChange: (value: number) => void;
   onDeepSimilaritySigmaChange: (value: number) => void;
   onRunDeep: () => void;
+  onCancelJob: () => void;
+  onOpenJobDetails: () => void;
 }) {
   const deep = runResult?.deep;
   const model = deepModelOptions.find((option) => option.value === deepModel) ?? deepModelOptions[1];
@@ -1785,7 +2015,13 @@ function DeepEntropyModule({
             </label>
           </div>
 
-          <RunProgressPanel progress={activeProgress} />
+          <RunProgressPanel
+            progress={activeProgress}
+            canCancel={Boolean(activeJob && ["queued", "running"].includes(activeJob.state))}
+            isCancelling={activeJob?.state === "cancelling"}
+            onCancel={onCancelJob}
+            onOpenDetails={onOpenJobDetails}
+          />
         </article>
 
         <article className="surface deep-summary-panel">
@@ -2069,6 +2305,37 @@ function formatProbability(value?: number) {
 
 function formatRuntime(value?: number | null) {
   return value == null ? "unknown" : `${value.toFixed(2)} s`;
+}
+
+function formatTimestamp(value?: number | null) {
+  if (value == null) return "unknown";
+  return new Date(value * 1000).toLocaleTimeString();
+}
+
+function jobLabel(job: JobStatusPayload) {
+  const shortId = job.jobId.slice(0, 8);
+  if (job.kind === "deep") return `Deep job ${shortId}`;
+  if (job.kind === "comparison") return `Comparison job ${shortId}`;
+  return `Slice job ${shortId}`;
+}
+
+function formatJobMetadata(result?: RunPayload | ComparisonPayload | null) {
+  if (!result) return "pending";
+  if ("runMetadata" in result && result.runMetadata) {
+    return JSON.stringify(result.runMetadata, null, 2);
+  }
+  if ("parameters" in result) {
+    return JSON.stringify(
+      {
+        sampleId: result.sampleId,
+        parameters: result.parameters,
+        bestVariantId: result.bestVariantId,
+      },
+      null,
+      2,
+    );
+  }
+  return JSON.stringify(result, null, 2);
 }
 
 function formatEntropy(run: RunPayload) {

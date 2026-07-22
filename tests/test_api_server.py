@@ -6,6 +6,7 @@ from visionentropy.api.server import (
     build_comparison_config,
     build_run_config,
     build_run_slug,
+    cancel_job_payload,
     comparison_result_payload,
     dataset_preview_payload,
     job_status_payload,
@@ -230,6 +231,8 @@ def test_job_registry_reports_progress_and_result() -> None:
     assert payload["stage"] == "Complete"
     assert payload["percent"] == 100.0
     assert payload["result"] == {"ok": True}
+    assert [entry["stage"] for entry in payload["timeline"]][-1] == "Complete"
+    assert payload["timeline"][0]["durationSeconds"] >= 0.0
 
 
 def test_start_run_job_completes_with_status_result() -> None:
@@ -254,6 +257,27 @@ def test_start_run_job_completes_with_status_result() -> None:
     assert payload["elapsedSeconds"] >= 0.0
 
 
+def test_job_registry_cancels_cooperatively() -> None:
+    api_server.JOB_REGISTRY = api_server.ApiJobRegistry()
+
+    def task(progress):
+        progress("First checkpoint", 1, 3, 20.0)
+        time.sleep(0.2)
+        progress("Second checkpoint", 2, 3, 60.0)
+        return {"ok": False}
+
+    job = api_server.job_registry().start("slice", task)
+    wait_for_job_stage(job.id, "First checkpoint")
+    cancelling = cancel_job_payload(job.id)
+    payload = wait_for_job(job.id)
+
+    assert cancelling["state"] == "cancelling"
+    assert payload["state"] == "cancelled"
+    assert payload["cancelRequested"] is True
+    assert payload["result"] is None
+    assert payload["error"] == "Job cancelled"
+
+
 def test_resolve_local_path_rejects_parent_escape() -> None:
     try:
         resolve_local_path("../outside.txt")
@@ -266,9 +290,20 @@ def test_resolve_local_path_rejects_parent_escape() -> None:
 def wait_for_job(job_id: str, *, timeout_seconds: float = 5.0) -> dict:
     deadline = time.time() + timeout_seconds
     payload = job_status_payload(job_id)
-    while payload["state"] in {"queued", "running"} and time.time() < deadline:
+    while payload["state"] in {"queued", "running", "cancelling"} and time.time() < deadline:
         time.sleep(0.05)
         payload = job_status_payload(job_id)
-    if payload["state"] in {"queued", "running"}:
+    if payload["state"] in {"queued", "running", "cancelling"}:
         raise AssertionError(f"job did not finish: {payload}")
+    return payload
+
+
+def wait_for_job_stage(job_id: str, stage: str, *, timeout_seconds: float = 5.0) -> dict:
+    deadline = time.time() + timeout_seconds
+    payload = job_status_payload(job_id)
+    while payload["stage"] != stage and payload["state"] in {"queued", "running"} and time.time() < deadline:
+        time.sleep(0.02)
+        payload = job_status_payload(job_id)
+    if payload["stage"] != stage:
+        raise AssertionError(f"job did not reach stage {stage}: {payload}")
     return payload
