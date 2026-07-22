@@ -6,7 +6,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import matplotlib
 import numpy as np
@@ -54,6 +54,8 @@ matplotlib.use("Agg")
 from matplotlib import colormaps  # noqa: E402
 from matplotlib import pyplot as plt  # noqa: E402
 
+ProgressCallback = Callable[[str, int, int, float], None]
+
 
 def run_vertical_slice_from_config(config_path: str | Path) -> PipelineResult:
     path = Path(config_path)
@@ -62,8 +64,14 @@ def run_vertical_slice_from_config(config_path: str | Path) -> PipelineResult:
     return run_vertical_slice(config, config_path=path)
 
 
-def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = None) -> PipelineResult:
+def run_vertical_slice(
+    config: dict[str, Any],
+    *,
+    config_path: Path | None = None,
+    progress: ProgressCallback | None = None,
+) -> PipelineResult:
     started = time.perf_counter()
+    _emit_progress(progress, "Preparing output folders", 0, 10, 2.0)
     experiment = config.get("experiment", {})
     output_directory = Path(experiment.get("output_directory", "outputs/runs/vertical_slice"))
     images_directory = output_directory / "images"
@@ -71,9 +79,12 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
     images_directory.mkdir(parents=True, exist_ok=True)
     data_directory.mkdir(parents=True, exist_ok=True)
 
+    _emit_progress(progress, "Loading dataset sample", 1, 10, 8.0)
     sample = _load_sample(config.get("dataset", {}))
+    _emit_progress(progress, "Preprocessing image", 2, 10, 15.0)
     sample = _preprocess_sample(sample, config.get("preprocessing", {}), config.get("dataset", {}))
 
+    _emit_progress(progress, "Building representation", 3, 10, 24.0)
     representation_name = config.get("representation", {}).get("name", "grayscale")
     representation = build_representation(representation_name).transform(sample.image)
     entropy_config = config.get("entropy", {}).get("parameters", {})
@@ -81,6 +92,7 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
     entropy_scope = config.get("entropy", {}).get("scope", "local")
     bins = int(entropy_config.get("bins", 64))
     window_radius = int(entropy_config.get("window_radius", 4))
+    _emit_progress(progress, "Computing local entropy", 4, 10, 34.0)
     entropy_result = LocalEntropyMap(window_radius=window_radius, bins=bins).compute(representation.data)
 
     segmentation_name = config.get("segmentation", {}).get("name", "maximum_entropy_threshold")
@@ -96,16 +108,19 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
     threshold_curve = False
     grayscale = _grayscale(sample.image)
     gradient_map = filters.sobel(grayscale)
+    _emit_progress(progress, "Building region representation", 5, 10, 45.0)
     region_representation = build_region_representation(
         sample.image,
         intensity=grayscale,
         entropy_map=entropy_result.map,
         entropy_bins=bins,
     )
+    _emit_progress(progress, "Analyzing region graph", 6, 10, 52.0)
     graph_entropy = analyze_region_graph(region_representation)
     deep_config = config.get("deep", {})
     deep_result = None
     if bool(deep_config.get("enabled", False)):
+        _emit_progress(progress, "Extracting deep features", 7, 10, 60.0)
         deep_result = analyze_deep_features(
             sample.image,
             model_name=deep_config.get("model", "resnet18"),
@@ -117,7 +132,9 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
             similarity_sigma=_optional_float(deep_config.get("similarity_sigma")),
             random_state=int(deep_config.get("random_state", 0)),
         )
+        _emit_progress(progress, "Computing deep uncertainty", 8, 10, 70.0)
 
+    _emit_progress(progress, "Running segmentation", 8, 10, 76.0)
     if segmentation_name in {"feature_kmeans", "boundary_region_kmeans", "kmeans"}:
         feature_entropy_map = LocalEntropyMap(window_radius=window_radius, bins=bins).compute(grayscale).map
         feature_stack = _boundary_region_features(
@@ -220,8 +237,10 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
 
     metrics = {}
     if sample.mask is not None:
+        _emit_progress(progress, "Evaluating segmentation", 9, 10, 86.0)
         metrics = binary_metrics(segmentation, sample.mask, score_map=score_map)
 
+    _emit_progress(progress, "Saving artifacts", 10, 10, 92.0)
     artifacts = _save_artifacts(
         output_directory=output_directory,
         images_directory=images_directory,
@@ -246,6 +265,7 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
     )
 
     duration = time.perf_counter() - started
+    _emit_progress(progress, "Complete", 10, 10, 100.0)
     run_metadata = build_run_metadata(
         config,
         sample_id=sample.sample_id,
@@ -287,6 +307,18 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
             "deep": _deep_summary(deep_result) if deep_result is not None else None,
         },
     )
+
+
+def _emit_progress(
+    progress: ProgressCallback | None,
+    stage: str,
+    stage_index: int,
+    total_stages: int,
+    percent: float,
+) -> None:
+    if progress is None:
+        return
+    progress(stage, stage_index, total_stages, percent)
 
 
 def _load_sample(dataset_config: dict[str, Any]) -> ImageSample:

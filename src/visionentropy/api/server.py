@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
 import numpy as np
@@ -22,6 +26,114 @@ from visionentropy.representations import build_representation
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
+JOB_REGISTRY = None
+
+
+@dataclass
+class ApiJob:
+    id: str
+    kind: str
+    state: str = "queued"
+    stage: str = "Queued"
+    stage_index: int = 0
+    total_stages: int = 1
+    percent: float = 0.0
+    started_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+    finished_at: float | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+    def payload(self) -> dict[str, Any]:
+        now = self.finished_at or time.time()
+        return {
+            "jobId": self.id,
+            "kind": self.kind,
+            "state": self.state,
+            "stage": self.stage,
+            "stageIndex": self.stage_index,
+            "totalStages": self.total_stages,
+            "percent": round(float(self.percent), 2),
+            "startedAt": self.started_at,
+            "updatedAt": self.updated_at,
+            "finishedAt": self.finished_at,
+            "elapsedSeconds": round(max(0.0, now - self.started_at), 3),
+            "result": self.result,
+            "error": self.error,
+        }
+
+
+class ApiJobRegistry:
+    def __init__(self) -> None:
+        self._jobs: dict[str, ApiJob] = {}
+        self._lock = threading.Lock()
+
+    def start(self, kind: str, task: Callable[[Callable[[str, int, int, float], None]], dict[str, Any]]) -> ApiJob:
+        job = ApiJob(id=uuid.uuid4().hex, kind=kind)
+        with self._lock:
+            self._jobs[job.id] = job
+        thread = threading.Thread(target=self._run, args=(job.id, task), daemon=True)
+        thread.start()
+        return self.get(job.id)
+
+    def get(self, job_id: str) -> ApiJob:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            return ApiJob(**job.__dict__)
+
+    def _run(
+        self,
+        job_id: str,
+        task: Callable[[Callable[[str, int, int, float], None]], dict[str, Any]],
+    ) -> None:
+        self.update(job_id, state="running", stage="Starting", percent=1.0)
+
+        def progress(stage: str, stage_index: int, total_stages: int, percent: float) -> None:
+            self.update(
+                job_id,
+                stage=stage,
+                stage_index=stage_index,
+                total_stages=max(1, total_stages),
+                percent=max(0.0, min(99.0, percent)),
+            )
+
+        try:
+            result = task(progress)
+            self.update(
+                job_id,
+                state="complete",
+                stage="Complete",
+                stage_index=1,
+                total_stages=1,
+                percent=100.0,
+                finished_at=time.time(),
+                result=result,
+            )
+        except Exception as error:  # noqa: BLE001 - report job errors to the local dashboard.
+            self.update(
+                job_id,
+                state="error",
+                stage="Failed",
+                percent=100.0,
+                finished_at=time.time(),
+                error=str(error),
+            )
+
+    def update(self, job_id: str, **updates: Any) -> None:
+        with self._lock:
+            job = self._jobs[job_id]
+            for key, value in updates.items():
+                setattr(job, key, value)
+            job.updated_at = time.time()
+
+
+def job_registry() -> ApiJobRegistry:
+    global JOB_REGISTRY
+    if JOB_REGISTRY is None:
+        JOB_REGISTRY = ApiJobRegistry()
+    return JOB_REGISTRY
 
 
 def serve(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
@@ -58,6 +170,10 @@ class VisionEntropyApiHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/runs":
                 self._send_json(run_history_payload())
                 return
+            if parsed.path.startswith("/api/jobs/"):
+                job_id = parsed.path.rsplit("/", 1)[-1]
+                self._send_json(job_status_payload(job_id))
+                return
             if parsed.path == "/api/comparisons/latest":
                 self._send_json(latest_comparison_payload())
                 return
@@ -83,6 +199,14 @@ class VisionEntropyApiHandler(BaseHTTPRequestHandler):
                 payload = self._read_json()
                 result = run_vertical_slice(build_run_config(payload))
                 self._send_json(run_result_payload(result))
+                return
+            if parsed.path == "/api/jobs/runs":
+                payload = self._read_json()
+                self._send_json(start_run_job(payload), status=HTTPStatus.ACCEPTED)
+                return
+            if parsed.path == "/api/jobs/comparisons":
+                payload = self._read_json()
+                self._send_json(start_comparison_job(payload), status=HTTPStatus.ACCEPTED)
                 return
             if parsed.path == "/api/comparisons":
                 payload = self._read_json()
@@ -437,6 +561,32 @@ def build_comparison_config(payload: dict[str, Any]) -> dict[str, Any]:
             ],
         },
     }
+
+
+def start_run_job(payload: dict[str, Any]) -> dict[str, Any]:
+    config = build_run_config(payload)
+    job_kind = "deep" if payload.get("jobKind") == "deep" else "slice"
+
+    def task(progress: Callable[[str, int, int, float], None]) -> dict[str, Any]:
+        return run_result_payload(run_vertical_slice(config, progress=progress))
+
+    return job_registry().start(job_kind, task).payload()
+
+
+def start_comparison_job(payload: dict[str, Any]) -> dict[str, Any]:
+    config = build_comparison_config(payload)
+
+    def task(progress: Callable[[str, int, int, float], None]) -> dict[str, Any]:
+        return comparison_result_payload(run_baseline_entropy_comparison(config, progress=progress))
+
+    return job_registry().start("comparison", task).payload()
+
+
+def job_status_payload(job_id: str) -> dict[str, Any]:
+    try:
+        return job_registry().get(job_id).payload()
+    except KeyError as error:
+        raise ValueError(f"Unknown job: {job_id}") from error
 
 
 def synthetic_parameters_from_payload(payload: dict[str, Any]) -> dict[str, Any]:

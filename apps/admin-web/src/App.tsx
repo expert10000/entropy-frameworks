@@ -155,6 +155,21 @@ type ActiveRunState = {
   kind: ActiveRunKind;
   startedAt: number;
 };
+type JobStatusPayload = {
+  jobId: string;
+  kind: ActiveRunKind;
+  state: "queued" | "running" | "complete" | "error";
+  stage: string;
+  stageIndex: number;
+  totalStages: number;
+  percent: number;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+  elapsedSeconds: number;
+  result?: RunPayload | ComparisonPayload | null;
+  error?: string | null;
+};
 type RunProgressModel = {
   label: string;
   percent: number;
@@ -383,6 +398,7 @@ function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
   const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
+  const [activeJob, setActiveJob] = useState<JobStatusPayload | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [activeView, setActiveView] = useState<WorkspaceView>("experiments");
   const [deepModel, setDeepModel] = useState("resnet18");
@@ -431,8 +447,8 @@ function App() {
     };
   }, [runResult]);
   const activeProgress = useMemo(
-    () => (activeRun ? buildRunProgress(activeRun, elapsedSeconds) : null),
-    [activeRun, elapsedSeconds]
+    () => (activeJob ? buildJobProgress(activeJob) : activeRun ? buildRunProgress(activeRun, elapsedSeconds) : null),
+    [activeJob, activeRun, elapsedSeconds]
   );
 
   useEffect(() => {
@@ -504,31 +520,7 @@ function App() {
     setActiveRun({ kind: "slice", startedAt: Date.now() });
     setStatusText("Running vertical slice");
     try {
-      const payload = await apiFetch<RunPayload>("/api/runs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dataset,
-          sampleIndex,
-          representation,
-          entropyMeasure,
-          entropyScope,
-          segmentationMethod,
-          height,
-          width,
-          bins,
-          windowRadius,
-          deepEnabled: true,
-          deepModel,
-          deepLayer,
-          deepRepresentationLevel,
-          deepUncertaintyMethod,
-          deepImageSize,
-          deepNeighborhoodK,
-          deepSimilaritySigma,
-          synthetic: syntheticPayload()
-        })
-      });
+      const payload = await requestRunJob("slice");
       setRunResult(payload);
       const history = await apiFetch<{ runs: RunPayload[] }>("/api/runs");
       setRunHistory(history.runs);
@@ -549,6 +541,7 @@ function App() {
     } finally {
       setIsRunning(false);
       setActiveRun(null);
+      setActiveJob(null);
     }
   }
 
@@ -565,11 +558,12 @@ function App() {
     } finally {
       setIsComparing(false);
       setActiveRun(null);
+      setActiveJob(null);
     }
   }
 
   async function requestComparison() {
-    return apiFetch<ComparisonPayload>("/api/comparisons", {
+    const job = await apiFetch<JobStatusPayload>("/api/jobs/comparisons", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -582,6 +576,7 @@ function App() {
         synthetic: syntheticPayload()
       })
     });
+    return pollJob<ComparisonPayload>(job);
   }
 
   async function runDeepPipeline() {
@@ -589,31 +584,7 @@ function App() {
     setActiveRun({ kind: "deep", startedAt: Date.now() });
     setStatusText("Running deep entropy slice");
     try {
-      const payload = await apiFetch<RunPayload>("/api/runs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dataset,
-          sampleIndex,
-          representation,
-          entropyMeasure,
-          entropyScope,
-          segmentationMethod,
-          height,
-          width,
-          bins,
-          windowRadius,
-          deepEnabled: true,
-          deepModel,
-          deepLayer,
-          deepRepresentationLevel,
-          deepUncertaintyMethod,
-          deepImageSize,
-          deepNeighborhoodK,
-          deepSimilaritySigma,
-          synthetic: syntheticPayload()
-        })
-      });
+      const payload = await requestRunJob("deep");
       setRunResult(payload);
       const history = await apiFetch<{ runs: RunPayload[] }>("/api/runs");
       setRunHistory(history.runs);
@@ -624,7 +595,56 @@ function App() {
     } finally {
       setIsRunning(false);
       setActiveRun(null);
+      setActiveJob(null);
     }
+  }
+
+  async function requestRunJob(jobKind: "slice" | "deep") {
+    const job = await apiFetch<JobStatusPayload>("/api/jobs/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jobKind,
+        dataset,
+        sampleIndex,
+        representation,
+        entropyMeasure,
+        entropyScope,
+        segmentationMethod,
+        height,
+        width,
+        bins,
+        windowRadius,
+        deepEnabled: true,
+        deepModel,
+        deepLayer,
+        deepRepresentationLevel,
+        deepUncertaintyMethod,
+        deepImageSize,
+        deepNeighborhoodK,
+        deepSimilaritySigma,
+        synthetic: syntheticPayload()
+      })
+    });
+    return pollJob<RunPayload>(job);
+  }
+
+  async function pollJob<T>(initialJob: JobStatusPayload): Promise<T> {
+    let job = initialJob;
+    setActiveJob(job);
+    while (job.state === "queued" || job.state === "running") {
+      await delay(350);
+      job = await apiFetch<JobStatusPayload>(`/api/jobs/${job.jobId}`);
+      setActiveJob(job);
+      setStatusText(job.stage);
+    }
+    if (job.state === "error") {
+      throw new Error(job.error ?? "Job failed");
+    }
+    if (!job.result) {
+      throw new Error("Job completed without a result");
+    }
+    return job.result as T;
   }
 
   function syntheticPayload() {
@@ -2103,11 +2123,39 @@ function buildRunProgress(activeRun: ActiveRunState, elapsedSeconds: number): Ru
   };
 }
 
+function buildJobProgress(job: JobStatusPayload): RunProgressModel {
+  const profile = runProgressProfiles[job.kind] ?? runProgressProfiles.slice;
+  const safeTotal = Math.max(1, job.totalStages);
+  const activeStageIndex = Math.max(0, Math.min(safeTotal - 1, job.stageIndex));
+  return {
+    label: profile.label,
+    percent: Math.max(0, Math.min(100, job.percent)),
+    elapsedSeconds: job.elapsedSeconds,
+    currentStage: job.stage,
+    stages: buildStageLabels(profile.stages, job.stage, safeTotal, activeStageIndex),
+    activeStageIndex
+  };
+}
+
+function buildStageLabels(profileStages: string[], stage: string, totalStages: number, activeStageIndex: number) {
+  if (profileStages.length === totalStages) {
+    return profileStages.map((label, index) => (index === activeStageIndex ? stage : label));
+  }
+  return Array.from({ length: totalStages }, (_, index) => {
+    if (index === activeStageIndex) return stage;
+    return profileStages[index] ?? `Stage ${index + 1}`;
+  });
+}
+
 function formatElapsed(seconds: number) {
   if (seconds < 60) return `${Math.max(0, Math.floor(seconds))}s`;
   const minutes = Math.floor(seconds / 60);
   const remaining = Math.floor(seconds % 60).toString().padStart(2, "0");
   return `${minutes}:${remaining}`;
+}
+
+function delay(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function deepModelLabel(model: string) {

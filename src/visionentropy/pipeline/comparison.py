@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 from skimage import filters
@@ -24,9 +24,16 @@ from visionentropy.pipeline.vertical_slice import (
 from visionentropy.representations import build_representation
 from visionentropy.segmentation import FeatureKMeansSegmenter, MaximumEntropySegmenter, maximum_entropy_threshold
 
+ProgressCallback = Callable[[str, int, int, float], None]
 
-def run_baseline_entropy_comparison(config: dict[str, Any]) -> dict[str, Any]:
+
+def run_baseline_entropy_comparison(
+    config: dict[str, Any],
+    *,
+    progress: ProgressCallback | None = None,
+) -> dict[str, Any]:
     started = time.perf_counter()
+    _emit_progress(progress, "Preparing comparison", 0, 8, 3.0)
     experiment = config.get("experiment", {})
     output_directory = Path(experiment.get("output_directory", "outputs/runs/comparison"))
     images_directory = output_directory / "images"
@@ -34,10 +41,13 @@ def run_baseline_entropy_comparison(config: dict[str, Any]) -> dict[str, Any]:
     images_directory.mkdir(parents=True, exist_ok=True)
     data_directory.mkdir(parents=True, exist_ok=True)
 
+    _emit_progress(progress, "Loading dataset sample", 1, 8, 10.0)
     sample = _load_sample(config.get("dataset", {}))
+    _emit_progress(progress, "Preprocessing image", 2, 8, 18.0)
     sample = _preprocess_sample(sample, config.get("preprocessing", {}), config.get("dataset", {}))
     target = np.asarray(sample.mask) > 0 if sample.mask is not None else None
 
+    _emit_progress(progress, "Computing entropy features", 3, 8, 30.0)
     gray = build_representation("grayscale").transform(sample.image).data
     gray = _zero_one(np.asarray(gray, dtype=np.float32))
     entropy_config = config.get("entropy", {}).get("parameters", {})
@@ -56,6 +66,7 @@ def run_baseline_entropy_comparison(config: dict[str, Any]) -> dict[str, Any]:
         target=target,
     )
 
+    _emit_progress(progress, "Saving shared artifacts", 4, 8, 42.0)
     shared_artifacts = _save_shared_artifacts(
         images_directory=images_directory,
         sample=sample,
@@ -65,6 +76,7 @@ def run_baseline_entropy_comparison(config: dict[str, Any]) -> dict[str, Any]:
         target=target,
     )
 
+    _emit_progress(progress, "Running baseline variants", 5, 8, 55.0)
     variants = [
         _variant(
             variant_id="baseline_a_grayscale_otsu",
@@ -123,6 +135,7 @@ def run_baseline_entropy_comparison(config: dict[str, Any]) -> dict[str, Any]:
         ),
     ]
 
+    _emit_progress(progress, "Selecting best result", 7, 8, 88.0)
     best_variant_id = _best_variant_id(variants)
     payload = {
         "sampleId": sample.sample_id,
@@ -137,7 +150,20 @@ def run_baseline_entropy_comparison(config: dict[str, Any]) -> dict[str, Any]:
     np.save(data_directory / "grayscale.npy", gray.astype(np.float32))
     np.save(data_directory / "entropy_map.npy", entropy_map.astype(np.float32))
     (output_directory / "comparison.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _emit_progress(progress, "Complete", 8, 8, 100.0)
     return payload
+
+
+def _emit_progress(
+    progress: ProgressCallback | None,
+    stage: str,
+    stage_index: int,
+    total_stages: int,
+    percent: float,
+) -> None:
+    if progress is None:
+        return
+    progress(stage, stage_index, total_stages, percent)
 
 
 def _save_shared_artifacts(

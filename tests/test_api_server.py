@@ -1,14 +1,18 @@
 from pathlib import Path
+import time
 
+from visionentropy.api import server as api_server
 from visionentropy.api.server import (
     build_comparison_config,
     build_run_config,
     build_run_slug,
     comparison_result_payload,
     dataset_preview_payload,
+    job_status_payload,
     resolve_local_path,
     run_history_payload,
     run_result_payload,
+    start_run_job,
     synthetic_parameters_from_payload,
     synthetic_presets_payload,
 )
@@ -213,6 +217,43 @@ def test_run_history_payload_lists_existing_runs() -> None:
     assert isinstance(payload["runs"], list)
 
 
+def test_job_registry_reports_progress_and_result() -> None:
+    api_server.JOB_REGISTRY = api_server.ApiJobRegistry()
+
+    job = api_server.job_registry().start(
+        "slice",
+        lambda progress: (progress("Working", 1, 3, 42.0), {"ok": True})[1],
+    )
+    payload = wait_for_job(job.id)
+
+    assert payload["state"] == "complete"
+    assert payload["stage"] == "Complete"
+    assert payload["percent"] == 100.0
+    assert payload["result"] == {"ok": True}
+
+
+def test_start_run_job_completes_with_status_result() -> None:
+    api_server.JOB_REGISTRY = api_server.ApiJobRegistry()
+
+    job = start_run_job(
+        {
+            "dataset": "synthetic_shapes",
+            "sampleIndex": 0,
+            "height": 32,
+            "width": 32,
+            "bins": 16,
+            "windowRadius": 1,
+            "deepEnabled": False,
+        }
+    )
+    payload = wait_for_job(job["jobId"], timeout_seconds=20.0)
+
+    assert payload["state"] == "complete"
+    assert payload["result"]["sampleId"] == "synthetic_0000"
+    assert payload["result"]["artifacts"]["entropy_map"].startswith("/api/files")
+    assert payload["elapsedSeconds"] >= 0.0
+
+
 def test_resolve_local_path_rejects_parent_escape() -> None:
     try:
         resolve_local_path("../outside.txt")
@@ -220,3 +261,14 @@ def test_resolve_local_path_rejects_parent_escape() -> None:
         assert "outside" in str(error)
     else:
         raise AssertionError("expected workspace escape to be rejected")
+
+
+def wait_for_job(job_id: str, *, timeout_seconds: float = 5.0) -> dict:
+    deadline = time.time() + timeout_seconds
+    payload = job_status_payload(job_id)
+    while payload["state"] in {"queued", "running"} and time.time() < deadline:
+        time.sleep(0.05)
+        payload = job_status_payload(job_id)
+    if payload["state"] in {"queued", "running"}:
+        raise AssertionError(f"job did not finish: {payload}")
+    return payload
