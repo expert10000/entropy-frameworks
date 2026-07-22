@@ -110,8 +110,15 @@ type RunPayload = {
     class_count?: number;
     top_probabilities?: Array<{ index: number; probability: number }>;
     mean_activation_entropy?: number;
+    mean_fuzzy_entropy?: number;
+    mean_rough_uncertainty?: number;
+    mean_fuzzy_rough_uncertainty?: number;
     latent_entropy?: number;
     predictive_entropy?: number;
+    representation_level?: string;
+    uncertainty_method?: string;
+    neighborhood_k?: number;
+    similarity_sigma?: number;
   } | null;
   metrics?: Record<string, number>;
   runtime?: Record<string, number>;
@@ -143,6 +150,19 @@ type ComparisonPayload = {
 type ApiState = "checking" | "online" | "offline";
 type ResultMode = "single" | "compare" | "overlay";
 type WorkspaceView = "experiments" | "deep";
+type ActiveRunKind = "slice" | "comparison" | "deep";
+type ActiveRunState = {
+  kind: ActiveRunKind;
+  startedAt: number;
+};
+type RunProgressModel = {
+  label: string;
+  percent: number;
+  elapsedSeconds: number;
+  currentStage: string;
+  stages: string[];
+  activeStageIndex: number;
+};
 
 const pipelineStages = [
   "Dataset",
@@ -163,6 +183,24 @@ const deepPipelineStages = [
   "Entropy calculation",
   "Evaluation"
 ];
+
+const runProgressProfiles: Record<ActiveRunKind, { label: string; expectedSeconds: number; stages: string[] }> = {
+  slice: {
+    label: "Running slice",
+    expectedSeconds: 10,
+    stages: ["Dataset", "Preprocess", "Features", "Entropy", "Segmentation", "Deep outputs", "Artifacts"]
+  },
+  comparison: {
+    label: "Running comparison",
+    expectedSeconds: 7,
+    stages: ["Baseline A", "Baseline B", "Entropy variants", "Metrics", "Report"]
+  },
+  deep: {
+    label: "Running deep entropy",
+    expectedSeconds: 12,
+    stages: ["Image", "CNN / ResNet", "Layer capture", "Fuzzy entropy", "Rough uncertainty", "Artifacts"]
+  }
+};
 
 const deepModelOptions = [
   { value: "small_cnn", label: "Small CNN", layers: ["stem", "layer1", "layer2", "avgpool", "logits"] },
@@ -286,6 +324,9 @@ const artifactOrder = [
   ["graph_partition", "Graph partition"],
   ["deep_feature_map", "Deep feature map"],
   ["activation_entropy", "Activation entropy"],
+  ["fuzzy_entropy", "Fuzzy entropy"],
+  ["rough_uncertainty", "Rough uncertainty"],
+  ["fuzzy_rough_uncertainty", "Fuzzy-rough uncertainty"],
   ["latent_entropy", "Latent entropy"],
   ["predictive_entropy", "Predictive entropy"],
   ["score_map", "Score map"],
@@ -341,12 +382,16 @@ function App() {
   const [statusText, setStatusText] = useState("Starting up");
   const [isRunning, setIsRunning] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
+  const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [activeView, setActiveView] = useState<WorkspaceView>("experiments");
   const [deepModel, setDeepModel] = useState("resnet18");
   const [deepLayer, setDeepLayer] = useState("layer4");
   const [deepRepresentationLevel, setDeepRepresentationLevel] = useState("pixel_embedding");
   const [deepUncertaintyMethod, setDeepUncertaintyMethod] = useState("classical");
   const [deepImageSize, setDeepImageSize] = useState(128);
+  const [deepNeighborhoodK, setDeepNeighborhoodK] = useState(15);
+  const [deepSimilaritySigma, setDeepSimilaritySigma] = useState(0);
   const [selectedArtifact, setSelectedArtifact] = useState("entropy_map");
   const [resultMode, setResultMode] = useState<ResultMode>("compare");
 
@@ -385,10 +430,25 @@ function App() {
       truePositive: values.true_positive ?? 0
     };
   }, [runResult]);
+  const activeProgress = useMemo(
+    () => (activeRun ? buildRunProgress(activeRun, elapsedSeconds) : null),
+    [activeRun, elapsedSeconds]
+  );
 
   useEffect(() => {
     refreshDashboard();
   }, []);
+
+  useEffect(() => {
+    if (!activeRun) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const updateElapsed = () => setElapsedSeconds((Date.now() - activeRun.startedAt) / 1000);
+    updateElapsed();
+    const interval = window.setInterval(updateElapsed, 250);
+    return () => window.clearInterval(interval);
+  }, [activeRun]);
 
   async function refreshDashboard() {
     setStatusText("Checking local API");
@@ -441,6 +501,7 @@ function App() {
 
   async function runPipeline() {
     setIsRunning(true);
+    setActiveRun({ kind: "slice", startedAt: Date.now() });
     setStatusText("Running vertical slice");
     try {
       const payload = await apiFetch<RunPayload>("/api/runs", {
@@ -463,6 +524,8 @@ function App() {
           deepRepresentationLevel,
           deepUncertaintyMethod,
           deepImageSize,
+          deepNeighborhoodK,
+          deepSimilaritySigma,
           synthetic: syntheticPayload()
         })
       });
@@ -471,6 +534,7 @@ function App() {
       setRunHistory(history.runs);
       setStatusText("Running baseline comparison");
       setIsComparing(true);
+      setActiveRun({ kind: "comparison", startedAt: Date.now() });
       try {
         const comparison = await requestComparison();
         setComparisonResult(comparison);
@@ -484,11 +548,13 @@ function App() {
       setStatusText(error instanceof Error ? error.message : "Run failed");
     } finally {
       setIsRunning(false);
+      setActiveRun(null);
     }
   }
 
   async function runComparison() {
     setIsComparing(true);
+    setActiveRun({ kind: "comparison", startedAt: Date.now() });
     setStatusText("Running baseline comparison");
     try {
       const payload = await requestComparison();
@@ -498,6 +564,7 @@ function App() {
       setStatusText(error instanceof Error ? error.message : "Comparison failed");
     } finally {
       setIsComparing(false);
+      setActiveRun(null);
     }
   }
 
@@ -519,6 +586,7 @@ function App() {
 
   async function runDeepPipeline() {
     setIsRunning(true);
+    setActiveRun({ kind: "deep", startedAt: Date.now() });
     setStatusText("Running deep entropy slice");
     try {
       const payload = await apiFetch<RunPayload>("/api/runs", {
@@ -541,6 +609,8 @@ function App() {
           deepRepresentationLevel,
           deepUncertaintyMethod,
           deepImageSize,
+          deepNeighborhoodK,
+          deepSimilaritySigma,
           synthetic: syntheticPayload()
         })
       });
@@ -553,6 +623,7 @@ function App() {
       setStatusText(error instanceof Error ? error.message : "Deep entropy run failed");
     } finally {
       setIsRunning(false);
+      setActiveRun(null);
     }
   }
 
@@ -856,15 +927,15 @@ function App() {
             <h3>Deep Entropy</h3>
             <div className="readonly-setting">
               <span>Backbone</span>
-              <strong>ResNet-18</strong>
+              <strong>{deepModelLabel(deepModel)}</strong>
             </div>
             <div className="readonly-setting">
               <span>Layer</span>
-              <strong>layer4 + avgpool + logits</strong>
+              <strong>{deepLayer}</strong>
             </div>
             <div className="readonly-setting">
               <span>Outputs</span>
-              <strong>features, activation, latent, predictive</strong>
+              <strong>{deepMethodLabel(deepUncertaintyMethod)}</strong>
             </div>
           </div>
 
@@ -892,6 +963,8 @@ function App() {
               <BarChart3 size={18} />
               <span>{isComparing ? "Comparing" : "Run Comparison"}</span>
             </button>
+
+            <RunProgressPanel progress={activeProgress} compact />
           </div>
 
           <div className="run-id-preview">
@@ -927,11 +1000,14 @@ function App() {
             runResult={runResult}
             resultArtifacts={resultArtifacts}
             isRunning={isRunning}
+            activeProgress={activeProgress}
             deepModel={deepModel}
             deepLayer={deepLayer}
             deepRepresentationLevel={deepRepresentationLevel}
             deepUncertaintyMethod={deepUncertaintyMethod}
             deepImageSize={deepImageSize}
+            deepNeighborhoodK={deepNeighborhoodK}
+            deepSimilaritySigma={deepSimilaritySigma}
             onDeepModelChange={(model) => {
               setDeepModel(model);
               const firstLayer = deepModelOptions.find((option) => option.value === model)?.layers[0];
@@ -941,6 +1017,8 @@ function App() {
             onDeepRepresentationLevelChange={setDeepRepresentationLevel}
             onDeepUncertaintyMethodChange={setDeepUncertaintyMethod}
             onDeepImageSizeChange={setDeepImageSize}
+            onDeepNeighborhoodKChange={setDeepNeighborhoodK}
+            onDeepSimilaritySigmaChange={setDeepSimilaritySigma}
             onRunDeep={runDeepPipeline}
           />
         ) : (
@@ -1465,9 +1543,12 @@ segmentation:
 features:
   ${featureDescription(segmentationMethod)}
 deep:
-  backbone: resnet18
-  layer: layer4
-  outputs: [deep_feature_map, activation_entropy, latent_entropy, predictive_entropy]
+  backbone: ${deepModel}
+  layer: ${deepLayer}
+  representation: ${deepRepresentationLevel}
+  method: ${deepUncertaintyMethod}
+  neighborhood_k: ${deepNeighborhoodK}
+  similarity_sigma: ${deepSimilaritySigma}
 run_id:
   ${runIdPreview}_<timestamp>`}</pre>
           </article>
@@ -1479,37 +1560,88 @@ run_id:
   );
 }
 
+function RunProgressPanel({ progress, compact = false }: { progress: RunProgressModel | null; compact?: boolean }) {
+  if (!progress) return null;
+
+  return (
+    <div className={compact ? "run-progress compact" : "run-progress"}>
+      <div className="run-progress-header">
+        <div>
+          <strong>{progress.label}</strong>
+          <span>{progress.currentStage}</span>
+        </div>
+        <time>{formatElapsed(progress.elapsedSeconds)}</time>
+      </div>
+      <div className="run-progress-track" aria-label={`${progress.label} progress`}>
+        <span style={{ width: `${progress.percent}%` }} />
+      </div>
+      <div className="run-progress-meta">
+        <span>{Math.round(progress.percent)}%</span>
+        <span>{compact ? "Waiting for API" : "API will mark complete when artifacts are saved"}</span>
+      </div>
+      {!compact && (
+        <div className="run-progress-stages">
+          {progress.stages.map((stage, index) => (
+            <span
+              className={
+                index < progress.activeStageIndex
+                  ? "complete"
+                  : index === progress.activeStageIndex
+                    ? "active"
+                    : ""
+              }
+              key={stage}
+            >
+              {stage}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeepEntropyModule({
   apiState,
   runResult,
   resultArtifacts,
   isRunning,
+  activeProgress,
   deepModel,
   deepLayer,
   deepRepresentationLevel,
   deepUncertaintyMethod,
   deepImageSize,
+  deepNeighborhoodK,
+  deepSimilaritySigma,
   onDeepModelChange,
   onDeepLayerChange,
   onDeepRepresentationLevelChange,
   onDeepUncertaintyMethodChange,
   onDeepImageSizeChange,
+  onDeepNeighborhoodKChange,
+  onDeepSimilaritySigmaChange,
   onRunDeep
 }: {
   apiState: ApiState;
   runResult: RunPayload | null;
   resultArtifacts: Record<string, string>;
   isRunning: boolean;
+  activeProgress: RunProgressModel | null;
   deepModel: string;
   deepLayer: string;
   deepRepresentationLevel: string;
   deepUncertaintyMethod: string;
   deepImageSize: number;
+  deepNeighborhoodK: number;
+  deepSimilaritySigma: number;
   onDeepModelChange: (value: string) => void;
   onDeepLayerChange: (value: string) => void;
   onDeepRepresentationLevelChange: (value: string) => void;
   onDeepUncertaintyMethodChange: (value: string) => void;
   onDeepImageSizeChange: (value: number) => void;
+  onDeepNeighborhoodKChange: (value: number) => void;
+  onDeepSimilaritySigmaChange: (value: number) => void;
   onRunDeep: () => void;
 }) {
   const deep = runResult?.deep;
@@ -1522,6 +1654,9 @@ function DeepEntropyModule({
     uncertaintyMethodOptions[0];
   const deepMetrics = [
     { label: "Activation entropy", value: deep?.mean_activation_entropy },
+    { label: "Fuzzy entropy", value: deep?.mean_fuzzy_entropy },
+    { label: "Rough uncertainty", value: deep?.mean_rough_uncertainty },
+    { label: "Fuzzy-rough", value: deep?.mean_fuzzy_rough_uncertainty },
     { label: "Latent entropy", value: deep?.latent_entropy },
     { label: "Predictive entropy", value: deep?.predictive_entropy },
     { label: "Classes", value: deep?.class_count, count: true }
@@ -1607,7 +1742,30 @@ function DeepEntropyModule({
                 onChange={(event) => onDeepImageSizeChange(Number(event.target.value))}
               />
             </label>
+            <label>
+              k neighbors
+              <input
+                type="number"
+                value={deepNeighborhoodK}
+                min={1}
+                max={64}
+                onChange={(event) => onDeepNeighborhoodKChange(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              RBF sigma
+              <input
+                type="number"
+                value={deepSimilaritySigma}
+                min={0}
+                max={5}
+                step={0.05}
+                onChange={(event) => onDeepSimilaritySigmaChange(Number(event.target.value))}
+              />
+            </label>
           </div>
+
+          <RunProgressPanel progress={activeProgress} />
         </article>
 
         <article className="surface deep-summary-panel">
@@ -1638,7 +1796,15 @@ function DeepEntropyModule({
             </div>
             <div>
               <dt>Method</dt>
-              <dd>{methodOption.label}</dd>
+              <dd>{deepMethodLabel(deep?.uncertainty_method ?? deepUncertaintyMethod)}</dd>
+            </div>
+            <div>
+              <dt>Neighborhood</dt>
+              <dd>k {deep?.neighborhood_k ?? deepNeighborhoodK}</dd>
+            </div>
+            <div>
+              <dt>RBF sigma</dt>
+              <dd>{deep?.similarity_sigma == null && deepSimilaritySigma === 0 ? "auto" : formatMetric(deep?.similarity_sigma ?? deepSimilaritySigma)}</dd>
             </div>
           </dl>
         </article>
@@ -1688,6 +1854,30 @@ function DeepEntropyModule({
           <div className="mini-artifacts">
             <ImagePanel title="Latent entropy" src={resultArtifacts.latent_entropy} />
             <ImagePanel title="Predictive entropy" src={resultArtifacts.predictive_entropy} />
+          </div>
+        </article>
+      </section>
+
+      <section className="deep-artifact-grid">
+        <article className="surface">
+          <div className="surface-heading">
+            <Activity size={18} />
+            <h3>Fuzzy Analysis</h3>
+          </div>
+          <div className="mini-artifacts">
+            <ImagePanel title="Fuzzy entropy" src={resultArtifacts.fuzzy_entropy} />
+            <ImagePanel title="Activation entropy" src={resultArtifacts.activation_entropy} />
+          </div>
+        </article>
+
+        <article className="surface">
+          <div className="surface-heading">
+            <Network size={18} />
+            <h3>Rough Analysis</h3>
+          </div>
+          <div className="mini-artifacts">
+            <ImagePanel title="Rough uncertainty" src={resultArtifacts.rough_uncertainty} />
+            <ImagePanel title="Fuzzy-rough uncertainty" src={resultArtifacts.fuzzy_rough_uncertainty} />
           </div>
         </article>
       </section>
@@ -1893,6 +2083,39 @@ function foregroundDescription(method: string) {
   if (maskOverlapMethods.has(method)) return "mask_overlap_eval";
   if (method === "random_forest") return "mask_supervised_train";
   return "high";
+}
+
+function buildRunProgress(activeRun: ActiveRunState, elapsedSeconds: number): RunProgressModel {
+  const profile = runProgressProfiles[activeRun.kind];
+  const smoothProgress = 100 * (1 - Math.exp(-elapsedSeconds / Math.max(profile.expectedSeconds, 1)));
+  const percent = Math.max(3, Math.min(94, smoothProgress));
+  const activeStageIndex = Math.min(
+    profile.stages.length - 1,
+    Math.floor((percent / 100) * profile.stages.length)
+  );
+  return {
+    label: profile.label,
+    percent,
+    elapsedSeconds,
+    currentStage: profile.stages[activeStageIndex],
+    stages: profile.stages,
+    activeStageIndex
+  };
+}
+
+function formatElapsed(seconds: number) {
+  if (seconds < 60) return `${Math.max(0, Math.floor(seconds))}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = Math.floor(seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${remaining}`;
+}
+
+function deepModelLabel(model: string) {
+  return deepModelOptions.find((option) => option.value === model)?.label ?? model;
+}
+
+function deepMethodLabel(method: string) {
+  return uncertaintyMethodOptions.find((option) => option.value === method)?.label ?? method;
 }
 
 function formatRunSubtitle(run: RunPayload) {

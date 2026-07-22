@@ -110,7 +110,11 @@ def run_vertical_slice(config: dict[str, Any], *, config_path: Path | None = Non
             sample.image,
             model_name=deep_config.get("model", "resnet18"),
             layer_name=deep_config.get("layer", "layer4"),
+            representation_level=deep_config.get("representation_level", "pixel_embedding"),
+            uncertainty_method=deep_config.get("uncertainty_method", "classical"),
             image_size=int(deep_config.get("image_size", 128)),
+            neighborhood_k=int(deep_config.get("neighborhood_k", 15)),
+            similarity_sigma=_optional_float(deep_config.get("similarity_sigma")),
             random_state=int(deep_config.get("random_state", 0)),
         )
 
@@ -328,6 +332,12 @@ def _optional_int(value: Any) -> int | None:
     if value in {None, ""}:
         return None
     return int(value)
+
+
+def _optional_float(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    return float(value)
 
 
 def _preprocess_sample(
@@ -559,8 +569,15 @@ def _deep_summary(deep_result: DeepEntropyResult) -> dict[str, Any]:
         "model": deep_result.model_name,
         "layer": deep_result.layer_name,
         "mean_activation_entropy": deep_result.mean_activation_entropy,
+        "mean_fuzzy_entropy": deep_result.mean_fuzzy_entropy,
+        "mean_rough_uncertainty": deep_result.mean_rough_uncertainty,
+        "mean_fuzzy_rough_uncertainty": deep_result.mean_fuzzy_rough_uncertainty,
         "latent_entropy": deep_result.latent_entropy,
         "predictive_entropy": deep_result.predictive_entropy,
+        "representation_level": deep_result.representation_level,
+        "uncertainty_method": deep_result.uncertainty_method,
+        "neighborhood_k": deep_result.neighborhood_k,
+        "similarity_sigma": deep_result.similarity_sigma,
     }
 
 
@@ -660,11 +677,17 @@ def _save_deep_artifacts(
         {
             "deep_feature_map": str(images_directory / "deep_feature_map.png"),
             "activation_entropy": str(images_directory / "activation_entropy.png"),
+            "fuzzy_entropy": str(images_directory / "fuzzy_entropy.png"),
+            "rough_uncertainty": str(images_directory / "rough_uncertainty.png"),
+            "fuzzy_rough_uncertainty": str(images_directory / "fuzzy_rough_uncertainty.png"),
             "latent_entropy": str(images_directory / "latent_entropy.png"),
             "predictive_entropy": str(images_directory / "predictive_entropy.png"),
             "deep_entropy_json": str(output_directory / "deep_entropy.json"),
             "deep_feature_map_array": str(data_directory / "deep_feature_map.npy"),
             "activation_entropy_array": str(data_directory / "activation_entropy.npy"),
+            "fuzzy_entropy_array": str(data_directory / "fuzzy_entropy.npy"),
+            "rough_uncertainty_array": str(data_directory / "rough_uncertainty.npy"),
+            "fuzzy_rough_uncertainty_array": str(data_directory / "fuzzy_rough_uncertainty.npy"),
             "latent_vector_array": str(data_directory / "latent_vector.npy"),
             "predictive_logits_array": str(data_directory / "predictive_logits.npy"),
         }
@@ -678,10 +701,20 @@ def _save_deep_artifacts(
 
     imsave(artifacts["deep_feature_map"], _heatmap(activation_projection(deep_result.feature_map)), check_contrast=False)
     imsave(artifacts["activation_entropy"], _heatmap(deep_result.activation_entropy), check_contrast=False)
+    imsave(artifacts["fuzzy_entropy"], _heatmap(deep_result.fuzzy_entropy), check_contrast=False)
+    imsave(artifacts["rough_uncertainty"], _heatmap(deep_result.rough_uncertainty), check_contrast=False)
+    imsave(
+        artifacts["fuzzy_rough_uncertainty"],
+        _heatmap(deep_result.fuzzy_rough_uncertainty),
+        check_contrast=False,
+    )
     _save_latent_entropy_plot(Path(artifacts["latent_entropy"]), deep_result)
     _save_predictive_entropy_plot(Path(artifacts["predictive_entropy"]), deep_result)
     np.save(artifacts["deep_feature_map_array"], deep_result.feature_map.astype(np.float32))
     np.save(artifacts["activation_entropy_array"], deep_result.activation_entropy.astype(np.float32))
+    np.save(artifacts["fuzzy_entropy_array"], deep_result.fuzzy_entropy.astype(np.float32))
+    np.save(artifacts["rough_uncertainty_array"], deep_result.rough_uncertainty.astype(np.float32))
+    np.save(artifacts["fuzzy_rough_uncertainty_array"], deep_result.fuzzy_rough_uncertainty.astype(np.float32))
     np.save(artifacts["latent_vector_array"], deep_result.latent_vector.astype(np.float32))
     np.save(artifacts["predictive_logits_array"], deep_result.logits.astype(np.float32))
 

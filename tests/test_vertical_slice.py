@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
-from visionentropy.deep import deep_learning_available
+from visionentropy.deep import deep_learning_available, deep_uncertainty_maps
 from visionentropy.deep.features import activation_entropy_map
 from visionentropy.entropy import LocalEntropyMap
 from visionentropy.evaluation import binary_metrics
@@ -119,6 +119,27 @@ def test_activation_entropy_map_matches_feature_spatial_shape() -> None:
     assert entropy.shape == (6, 5)
     assert float(entropy.max()) <= 1.0
     assert float(entropy.min()) >= 0.0
+
+
+def test_deep_uncertainty_maps_return_fuzzy_rough_outputs() -> None:
+    feature_map = np.zeros((5, 6, 4), dtype=np.float32)
+    feature_map[0, :3] = 1.0
+    feature_map[1, 3:] = 1.0
+    feature_map[2, :, 1:3] = 0.5
+
+    maps = deep_uncertainty_maps(
+        feature_map,
+        neighborhood_k=3,
+        similarity_sigma=0.75,
+        random_state=0,
+    )
+
+    assert maps["fuzzy_entropy"].shape == (6, 4)
+    assert maps["rough_uncertainty"].shape == (6, 4)
+    assert maps["fuzzy_rough_uncertainty"].shape == (6, 4)
+    assert float(maps["fuzzy_entropy"].max()) <= 1.0
+    assert float(maps["rough_uncertainty"].min()) >= 0.0
+    assert float(maps["fuzzy_rough_uncertainty"].max()) <= 1.0
 
 
 def test_classical_segmenters_return_binary_masks() -> None:
@@ -278,21 +299,41 @@ def test_vertical_slice_writes_deep_entropy_outputs_when_enabled(tmp_path: Path)
         "representation": {"name": "grayscale"},
         "entropy": {"parameters": {"bins": 24, "window_radius": 2}},
         "segmentation": {"name": "otsu", "parameters": {"bins": 24, "foreground": "high"}},
-        "deep": {"enabled": True, "model": "resnet18", "image_size": 64, "random_state": 0},
+        "deep": {
+            "enabled": True,
+            "model": "resnet18",
+            "layer": "layer3",
+            "representation_level": "superpixel_embedding",
+            "uncertainty_method": "fuzzy_rough",
+            "image_size": 64,
+            "neighborhood_k": 5,
+            "similarity_sigma": 0.75,
+            "random_state": 0,
+        },
     }
 
     result = run_vertical_slice(config)
 
     assert result.metadata["deep"]["available"] is True
     assert result.metadata["deep"]["model"] == "resnet18"
+    assert result.metadata["deep"]["uncertainty_method"] == "fuzzy_rough"
     assert result.metadata["deep"]["mean_activation_entropy"] >= 0.0
+    assert result.metadata["deep"]["mean_fuzzy_entropy"] >= 0.0
+    assert result.metadata["deep"]["mean_rough_uncertainty"] >= 0.0
+    assert result.metadata["deep"]["mean_fuzzy_rough_uncertainty"] >= 0.0
     assert (output_directory / "images" / "deep_feature_map.png").exists()
     assert (output_directory / "images" / "activation_entropy.png").exists()
+    assert (output_directory / "images" / "fuzzy_entropy.png").exists()
+    assert (output_directory / "images" / "rough_uncertainty.png").exists()
+    assert (output_directory / "images" / "fuzzy_rough_uncertainty.png").exists()
     assert (output_directory / "images" / "latent_entropy.png").exists()
     assert (output_directory / "images" / "predictive_entropy.png").exists()
     assert (output_directory / "deep_entropy.json").exists()
     assert (output_directory / "data" / "deep_feature_map.npy").exists()
     assert (output_directory / "data" / "activation_entropy.npy").exists()
+    assert (output_directory / "data" / "fuzzy_entropy.npy").exists()
+    assert (output_directory / "data" / "rough_uncertainty.npy").exists()
+    assert (output_directory / "data" / "fuzzy_rough_uncertainty.npy").exists()
     assert (output_directory / "data" / "latent_vector.npy").exists()
     assert (output_directory / "data" / "predictive_logits.npy").exists()
 

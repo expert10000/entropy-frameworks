@@ -187,6 +187,102 @@ dt {
   gap: 10px;
 }
 
+.run-progress {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #b8cfd6;
+  border-radius: 8px;
+  background: #f5fbfc;
+}
+
+.run-progress.compact {
+  padding: 10px;
+}
+
+.run-progress-header,
+.run-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.run-progress-header div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.run-progress-header strong {
+  color: #155e6e;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.run-progress-header span,
+.run-progress-meta {
+  color: #617178;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.run-progress-header time {
+  flex-shrink: 0;
+  color: #182026;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.run-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #d8e8ec;
+}
+
+.run-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1f7a8c, #2d9c7c);
+  transition: width 220ms ease;
+}
+
+.run-progress-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 7px;
+}
+
+.run-progress-stages span {
+  min-width: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  border: 1px solid #d8e0e3;
+  border-radius: 7px;
+  color: #617178;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-progress-stages span.complete {
+  color: #1c6b55;
+  border-color: #b9dfd3;
+  background: #e8f6f1;
+}
+
+.run-progress-stages span.active {
+  color: #155e6e;
+  border-color: #9fc4ce;
+  background: #e8f5f8;
+}
+
 .readonly-setting {
   display: grid;
   gap: 5px;

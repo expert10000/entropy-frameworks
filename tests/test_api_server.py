@@ -87,6 +87,12 @@ def test_build_run_config_uses_ui_parameters() -> None:
             "bins": 32,
             "windowRadius": 3,
             "synthetic": {"syntheticPreset": "s02_gaussian_noise"},
+            "deepModel": "resnet34",
+            "deepLayer": "layer3",
+            "deepRepresentationLevel": "superpixel_embedding",
+            "deepUncertaintyMethod": "fuzzy_rough",
+            "deepNeighborhoodK": 9,
+            "deepSimilaritySigma": 0.8,
         }
     )
 
@@ -98,7 +104,12 @@ def test_build_run_config_uses_ui_parameters() -> None:
     assert config["entropy"]["parameters"] == {"bins": 32, "window_radius": 3}
     assert config["segmentation"]["name"] == "kapur"
     assert config["deep"]["enabled"] is True
-    assert config["deep"]["model"] == "resnet18"
+    assert config["deep"]["model"] == "resnet34"
+    assert config["deep"]["layer"] == "layer3"
+    assert config["deep"]["representation_level"] == "superpixel_embedding"
+    assert config["deep"]["uncertainty_method"] == "fuzzy_rough"
+    assert config["deep"]["neighborhood_k"] == 9
+    assert config["deep"]["similarity_sigma"] == 0.8
     assert config["dataset"]["preset"] == "s02_gaussian_noise"
     assert "synthetic_002_shannon_local_kapur_r3_b32" in config["experiment"]["name"]
 

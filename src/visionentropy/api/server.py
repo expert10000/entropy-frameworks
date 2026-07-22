@@ -379,6 +379,8 @@ def build_run_config(payload: dict[str, Any]) -> dict[str, Any]:
             "uncertainty_method": payload.get("deepUncertaintyMethod", "classical"),
             "representation_level": payload.get("deepRepresentationLevel", "pixel_embedding"),
             "image_size": int(payload.get("deepImageSize", 128)),
+            "neighborhood_k": int(payload.get("deepNeighborhoodK", 15)),
+            "similarity_sigma": optional_float(payload.get("deepSimilaritySigma")),
             "random_state": int(payload.get("randomState", 0)),
         },
     }
@@ -465,6 +467,12 @@ def parse_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def optional_float(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    return float(value)
 
 
 def build_run_slug(
@@ -624,6 +632,9 @@ def run_directory_payload(root: Path) -> dict[str, Any]:
         "graph_partition": str(root / "images/graph_partition.png"),
         "deep_feature_map": str(root / "images/deep_feature_map.png"),
         "activation_entropy": str(root / "images/activation_entropy.png"),
+        "fuzzy_entropy": str(root / "images/fuzzy_entropy.png"),
+        "rough_uncertainty": str(root / "images/rough_uncertainty.png"),
+        "fuzzy_rough_uncertainty": str(root / "images/fuzzy_rough_uncertainty.png"),
         "latent_entropy": str(root / "images/latent_entropy.png"),
         "predictive_entropy": str(root / "images/predictive_entropy.png"),
         "score_map": str(root / "images/score_map.png"),
@@ -685,8 +696,15 @@ def deep_summary_payload(root: Path) -> dict[str, Any] | None:
         "class_count": payload.get("classCount"),
         "top_probabilities": payload.get("topProbabilities"),
         "mean_activation_entropy": payload.get("meanActivationEntropy"),
+        "mean_fuzzy_entropy": payload.get("meanFuzzyEntropy"),
+        "mean_rough_uncertainty": payload.get("meanRoughUncertainty"),
+        "mean_fuzzy_rough_uncertainty": payload.get("meanFuzzyRoughUncertainty"),
         "latent_entropy": payload.get("latentEntropy"),
         "predictive_entropy": payload.get("predictiveEntropy"),
+        "representation_level": payload.get("representationLevel"),
+        "uncertainty_method": payload.get("uncertaintyMethod"),
+        "neighborhood_k": payload.get("neighborhoodK"),
+        "similarity_sigma": payload.get("similaritySigma"),
     }
 
 
